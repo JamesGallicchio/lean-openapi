@@ -1,1 +1,3 @@
-import LeanOpenAPI.Spec
+import LeanOpenAPI.JsonSchema
+import LeanOpenAPI.OpenAPI
+import LeanOpenAPI.Std

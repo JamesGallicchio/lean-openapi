@@ -9,6 +9,7 @@ lean_lib LeanOpenAPI {
   -- add library configuration options here
 }
 
+@[default_target]
 lean_exe «examples» {
   root := `Examples
 } 
