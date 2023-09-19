@@ -28,3 +28,62 @@ def Array.forall_of_all {A : Array α} (f : α → Bool) :
   · contradiction
   · simp [*]
 
+namespace Lean.RBNode
+
+inductive Mem {α} {β : α → Type} : ((a : α) ×' β a) → RBNode α β → Prop
+| here (a : α) (x : β a) : Mem ⟨a, x⟩ (.node c L a x R)
+| left  : Mem a L → Mem a (.node c L a' x R)
+| right : Mem a R → Mem a (.node c L a' x R)
+
+instance : Membership ((a : α) ×' β a) (RBNode α β) := ⟨Mem⟩
+
+def pmap (n : RBNode α β) (f : (a : α) → (b : β a) → ⟨a,b⟩ ∈ n → γ a) : RBNode α γ :=
+  match n with
+  | .node c L a x R =>
+    .node c
+      (pmap L (f · · <| .left ·))
+      a (f a x (.here _ _))
+      (pmap R (f · · <| .right ·))
+  | .leaf => .leaf
+
+theorem forall_of_all (n : RBNode α β) (h : n.all p) : ∀ a b, ⟨a,b⟩ ∈ n → p a b := by
+  intro a b hab
+  induction n with
+  | leaf => cases hab
+  | node c L a' b' R Lih Rih =>
+    cases hab <;> simp [all] at h
+    · exact h.1.1
+    case left hab =>
+      exact Lih h.1.2 hab
+    case right hab =>
+      exact Rih h.2 hab
+
+instance [Inhabited α] [Inhabited β] : Inhabited ((_ : α) × β) where
+  default := ⟨default, default⟩
+
+open Std.Format in
+def Lean.Json.reprPrec (j : Lean.Json) (prec : Nat) : Format :=
+  match j with
+  | .obj m =>
+    let middle := m.fold (fun L s j' =>
+      have : sizeOf j' < 1 + sizeOf m := sorry
+      (group <|
+        text ("\"" ++ s ++ "\"")
+        ++ ": " ++
+        reprPrec j' (prec+1))
+      :: L
+      ) []
+    group <| nestD <| "{" ++ line ++ (join <| middle.intersperse ("," ++ line)) ++ "}"
+  | .arr js =>
+    let middle := js.map (fun j' =>
+        have : sizeOf j' < 1 + sizeOf js := sorry
+        reprPrec j' (prec+1))
+      |>.toList
+    group <| nestD <| "[" ++ (join <| middle.intersperse ("," ++ line)) ++ "]"
+  | .str s => s.quote
+  | .num n => toString n
+  | .bool b => toString b
+  | .null => "null"
+termination_by _ j _ => sizeOf j
+
+instance : Repr Lean.Json := ⟨Lean.Json.reprPrec⟩

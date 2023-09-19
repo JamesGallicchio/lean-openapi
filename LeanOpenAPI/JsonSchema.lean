@@ -21,128 +21,64 @@ import LeanOpenAPI.Std
 
 namespace LeanOpenAPI
 
-structure JsonSchema where
-  validate : Lean.Json → Bool
+structure JsonSchema (α) extends Lean.FromJson α, Lean.ToJson α where
+
+structure JsonValue (s : JsonSchema α) where
+  val : α
+deriving Inhabited
+
+instance : Repr (JsonValue s) := ⟨(s.toJson ·.val |> reprPrec)⟩
+instance : Lean.FromJson (JsonValue s) := ⟨fun j => s.fromJson? j |>.map (⟨·⟩)⟩
+instance : Lean.ToJson (JsonValue s) := ⟨fun x => s.toJson x.val⟩
+
+instance : CoeSort (JsonSchema α) Type := ⟨JsonValue⟩
 
 namespace JsonSchema
 
-def validates (s : JsonSchema) (j : Lean.Json) : Prop := s.validate j = true
-
-end JsonSchema
-
-structure ValidJson (s : JsonSchema) where
-  json : Lean.Json
-  isValid : s.validates json
-
 /-! Primitive data types -/
 
-def JsonSchema.integer : JsonSchema := ⟨(match · with | .num n => n.exponent = 0 | _ => false)⟩
-def ValidJson.integer (j : ValidJson .integer) : Int :=
-  match j with
-  | ⟨.num n, _h⟩ => n.mantissa
+def integer : JsonSchema Int where
 
-def JsonSchema.number : JsonSchema := ⟨(match · with | .num _n => true | _ => false)⟩
-def ValidJson.number (j : ValidJson .number) : Lean.JsonNumber :=
-  match j with
-  | ⟨.num n, _h⟩ => n
+def number : JsonSchema Lean.JsonNumber where
 
-def JsonSchema.string : JsonSchema := ⟨(match · with | .str _n => true | _ => false)⟩
-def ValidJson.string (j : ValidJson .string) : String :=
-  match j with
-  | ⟨.str s, _h⟩ => s
+def string : JsonSchema String where
 
-def JsonSchema.boolean : JsonSchema := ⟨(match · with | .bool _n => true | _ => false)⟩
-def ValidJson.boolean (j : ValidJson .boolean) : Bool :=
-  match j with
-  | ⟨.bool b, _h⟩ => b
+def boolean : JsonSchema Bool where
 
 /-! Arrays -/
 
-def JsonSchema.array (s : JsonSchema) : JsonSchema := ⟨(match · with | .arr a => a.all s.validate | _ => false)⟩
-def ValidJson.array (j : ValidJson (.array s)) : Array (ValidJson s) :=
-  match j with
-  | ⟨.arr a, h⟩ => a.pmap (fun j' h' => ⟨j', by
-    rcases h' with ⟨i,h'⟩
-    simp [JsonSchema.validates, JsonSchema.array] at h
-    have := Array.forall_of_all _ h i
-    rw [h'] at this; exact this
-    ⟩)
+def array (s : JsonSchema α) : JsonSchema (Array α) where
+  toJson x := .arr (x.map s.toJson)
+  fromJson? x :=
+    match x with
+    | .arr a => a.mapM s.fromJson?
+    | _ => .error "expected array"
 
 /-! Objects -/
 
-structure JsonSchema.ObjectField where
-  name : String
-  isOpt : Bool
-  schema : JsonSchema
-
-/-- Validates a value if it is an object.
-  
-  For each `{name,isOpt,schema} ∈ fields`, if `isOpt = true` then `name`
-  MUST be a field of the object. Furthermore, if `name : value` in the object,
-  then `schema` validates `value`. -/
-def JsonSchema.object (fields : List JsonSchema.ObjectField) : JsonSchema where
-  validate j :=
+/-- For a given key, if that key exists, specify the schema
+    that applies to that key -/
+def objectMap (f : (s : String) → JsonSchema (α s)) : JsonSchema (Lean.RBNode String α) where
+  toJson x := .obj (x.map (f · |>.toJson))
+  fromJson? j :=
     match j with
-    | .obj m => fields.all (fun {name, isOpt, schema} =>
-      match m.find compare name with
-      | some j => schema.validate j
-      | none => isOpt)
-    | _ => false
-def ValidJson.objectHead (j : ValidJson (.object ({name,isOpt:=false,schema}::fs)))
-  : ValidJson schema :=
-  match j with
-  | ⟨.obj m,h⟩ =>
-    have h := by simp [JsonSchema.object, JsonSchema.validates] at h; exact h.1
-    match h' : m.find compare name with
-    | some j => ⟨j, by simp [h'] at h; exact h⟩
-    | none   => by simp [h'] at h
-def ValidJson.objectHeadOpt (j : ValidJson (.object ({name,isOpt:=true,schema}::fs)))
-  : Option (ValidJson schema) :=
-  match j with
-  | ⟨.obj m,h⟩ =>
-    have h := by simp [JsonSchema.object, JsonSchema.validates] at h; exact h.1
-    match h' : m.find compare name with
-    | some j => some ⟨j, by simp [h'] at h; exact h⟩
-    | none   => none
-
-theorem JsonSchema.objectTail (h : JsonSchema.object (f::fs) |>.validates j)
-  : JsonSchema.object fs |>.validates j := by
-  cases j <;>
-    simp [validates, object] at h ⊢
-  exact h.2
-
--- TODO: a macro to get object values by name alone
+    | .obj m => m.mapM (f · |>.fromJson? ·)
+    | _ => .error "expected object"
 
 /-! Subtypes (arbitrary properties on top of a given schema) -/
 
-def JsonSchema.withProperty (s : JsonSchema) (p : ValidJson s → Bool) : JsonSchema where
-  validate j :=
-    if h : s.validate j then
-      p ⟨j, h⟩
-    else false
-def ValidJson.val (j : ValidJson (.withProperty s p)) : ValidJson s :=
-  match j with
-  | ⟨json, h⟩ => ⟨json, by
-    simp [JsonSchema.validates, JsonSchema.withProperty] at h
-    split at h
-    · assumption
-    · contradiction⟩
-def ValidJson.property (j : ValidJson (.withProperty s p)) : p j.val := by
-  rcases j with ⟨json,h⟩
-  simp [JsonSchema.validates, JsonSchema.withProperty] at h
-  split at h <;> try contradiction
-  simp [val, h]
+def withProperty (s : JsonSchema α) (errString : String) (p : α → Bool)
+  : JsonSchema { a : α // p a } where
+  toJson x := s.toJson x
+  fromJson? j := do
+    let a ← s.fromJson? j
+    if h : p a then
+      return ⟨a,h⟩
+    else .error errString
 
 /-! Either -/
 
-def JsonSchema.orElse (s1 s2 : JsonSchema) : JsonSchema where
-  validate j := s1.validate j || s2.validate j
-def ValidJson.orElse (j : ValidJson (.orElse s1 s2)) : (ValidJson s1) ⊕ (ValidJson s2) :=
-  match j with
-  | ⟨j, h⟩ =>
-  if h' : s1.validate j then
-    .inl ⟨j, h'⟩
-  else
-    .inr ⟨j, by simp [JsonSchema.validates, JsonSchema.orElse, h'] at h; exact h⟩
-
-/-! -/
+def orElse (s1 : JsonSchema α) (s2 : JsonSchema β) : JsonSchema (α ⊕ β) where
+  toJson | .inl a => s1.toJson a | .inr b => s2.toJson b
+  fromJson? j :=
+    (s1.fromJson? j |>.map .inl) |>.orElseLazy fun () => (s2.fromJson? j |>.map .inr)
