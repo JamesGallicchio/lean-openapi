@@ -76,6 +76,15 @@ def withProperty (s : JsonSchema α) (errString : String) (p : α → Bool)
       return ⟨a,h⟩
     else .error errString
 
+/-! Pairs -/
+
+def guard {β : α → Type} (f : Except String α) (g : (a : α) → JsonSchema (β a)) : JsonSchema (Σ a, β a) where
+  toJson | ⟨a,b⟩ => (g a).toJson b
+  fromJson? j := do
+    let a ← f
+    let b ← (g a).fromJson? j
+    return ⟨a,b⟩
+
 /-! Either -/
 
 def orElse (s1 : JsonSchema α) (s2 : JsonSchema β) : JsonSchema (α ⊕ β) where

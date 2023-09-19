@@ -24,6 +24,48 @@ open Lean JsonSchema
 
 namespace OpenAPI
 
+structure PathTemplate where
+  params : List String
+  subst : (∀ s, s ∈ params → String) → String
+
+def pathTemplate (s : String) : Except String PathTemplate := do
+  if !s.startsWith "/" then
+    throw "Expected path template to start with /"
+  
+  let params ← findVars 0 []
+  return {
+    params
+    subst := fun f => params.attach.foldl (fun s ⟨v,h⟩ =>
+        s.replace (pattern := s!"\{{v}}") (replacement := f v h)
+      ) s
+  }
+where findVars (start : String.Pos) (acc : List String) : Except String (List String) := do
+  if _hs : start < s.endPos then
+    let leftBracIdx := String.posOfAux s '{' s.endPos start
+    if s.atEnd leftBracIdx then
+      return acc
+
+    let rightBracIdx := String.posOfAux s '}' s.endPos (s.next leftBracIdx)
+    if s.atEnd rightBracIdx then
+      throw "mismatched { in path template"
+      
+    let var := { str := s, startPos := s.next leftBracIdx,
+                  stopPos := rightBracIdx : Substring }
+        |>.toString
+    
+    if var.any (· ∈ ['{', '}', '/', '?', '#']) then
+      throw s!"path parameter name contains special characters: `{var}`"
+
+    if _h : start < s.next rightBracIdx then
+      findVars (s.next rightBracIdx) (var :: acc)
+    else panic! "posOfAux indices messed up"
+  else return acc
+termination_by findVars start _ => s.endPos - start
+decreasing_by
+  simp_wf; simp [sizeOf, String.Pos._sizeOf_1]
+  apply Nat.add_lt_add_left; apply Nat.sub_lt_sub_left
+  repeat assumption
+
 structure Reference where
   «$ref» : String
 deriving ToJson, FromJson, Repr
@@ -46,8 +88,6 @@ structure License where
 deriving ToJson, FromJson
 
 def license : JsonSchema License where
-
-#eval do return license.toJson <| ← license.fromJson? (← Json.parse "{\"name\":\"hi\", \"url\":\"bye\"}")
 
 structure Info where
   title : string
@@ -127,8 +167,8 @@ structure Operation where
   (summary description : Option string)
   externalDocs : Option externalDocs
   operationId : Option string
-  parameters : Option (array (parameter.orElse reference))
-  requestBody : Option (requestBody.orElse reference)
+  parameters : Option (array (reference.orElse parameter))
+  requestBody : Option (reference.orElse requestBody)
   --responses : Responses
   --callbacks : Lean.RBMap String (MaybeRef Callback)
   deprecated : Option boolean
@@ -138,24 +178,27 @@ deriving ToJson, FromJson
 
 def operation : JsonSchema Operation where
 
-structure PathItem where
+structure PathItem (pt : PathTemplate) where
   summary : Option string
   description : Option string
   (get put post delete options head patch trace : Option operation)
   servers : Option (array server)
-  parameters : Option (array (parameter.orElse reference)) 
+  parameters : Option (array (reference.orElse parameter)) 
 deriving Inhabited, Repr, ToJson, FromJson
 
-def pathItem : JsonSchema PathItem where
+def pathItem (pt) : JsonSchema (PathItem pt) where
 
-def paths := objectMap (fun s => reference.orElse pathItem)
+def paths : JsonSchema (RBNode String fun _ =>
+    (pt : PathTemplate) × (Reference ⊕ PathItem pt)
+  ) := objectMap (fun path =>
+  guard (pathTemplate path) fun pt => reference.orElse (pathItem pt))
 
 end Paths
 
 structure Components where
   --schemas : Lean.RBMap String (MaybeRef Schema) compare
   --responses : Lean.RBMap String (MaybeRef Response) compare
-  --parameters : Lean.RBMap String (MaybeRef Parameter) compare
+  parameters : objectMap (fun _ => reference.orElse parameter)
   --examples : Lean.RBMap String (MaybeRef Example) compare
   --requestBodies : Lean.RBMap String (MaybeRef RequestBody) compare
   --headers : Lean.RBMap String (MaybeRef Header) compare
@@ -179,4 +222,5 @@ deriving ToJson, FromJson
   let str ← IO.FS.readFile "examples/api.github.com.json"
   let json ← IO.ofExcept <| Lean.Json.parse str
   let spec : OpenAPI ← IO.ofExcept <| Lean.FromJson.fromJson? json
-  return spec.paths.val.any (fun _ => Sum.isLeft)
+  let ⟨a,b,c⟩ ← IO.ofExcept <| Option.getDM (m := Except String) (spec.paths.val.lowerBound compare "/rz" none) (throw "hi")
+  return a
