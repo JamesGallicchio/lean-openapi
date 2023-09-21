@@ -66,12 +66,6 @@ decreasing_by
   apply Nat.add_lt_add_left; apply Nat.sub_lt_sub_left
   repeat assumption
 
-structure Reference where
-  «$ref» : String
-deriving ToJson, FromJson, Repr
-
-def reference : JsonSchema Reference where
-
 section Info
 
 structure Contact where
@@ -133,78 +127,151 @@ section Parameter
 
 inductive Parameter.In
 | query | header | path | cookie
-deriving ToJson, FromJson, DecidableEq
+deriving ToJson, FromJson, Repr, Inhabited
 
-def parameter.in : JsonSchema Parameter.In where
+def parameter.in : JsonSchema Parameter.In :=
+  JsonSchema.ofLeanJson.addFailingJson
 
 structure Parameter where
   «in» : parameter.in
-  name : string.withProperty "parameter name conditions" (fun s =>
-      match «in».val with
-      | .path => True
-      | _ => True
-  )
+  name : string
   description : Option string
   required : Option boolean
   deprecated : Option boolean
   allowEmptyValue : Option boolean
+  style : Option string
+  explode : Option boolean
+  allowReserved : Option boolean
+  schema : Option any
+  «example» : Option any
+  examples : Option (objectMap fun _ => any)
 deriving ToJson, FromJson
 
-def parameter : JsonSchema Parameter where
+def parameter : JsonSchema Parameter :=
+  JsonSchema.ofLeanJson.addFailingJson
 
 end Parameter
 
-section Paths
+section RequestBody
+
+structure MediaType where
+  schema : Option Lean.Json
+  «example» : Option Lean.Json
+  examples : Option Lean.Json
+  encoding : Option Lean.Json
+deriving ToJson, FromJson
+
+def mediaType : JsonSchema MediaType := .ofLeanJson
 
 structure RequestBody where
-  --
+  description : Option string
+  content : objectMap (fun _ => mediaType)
+  required : Option boolean
 deriving ToJson, FromJson
 
 def requestBody : JsonSchema RequestBody where
+
+end RequestBody
+
+section Responses
+
+structure Header where
+  description : Option string
+  required : Option boolean
+  deprecated : Option boolean
+  allowEmptyValue : Option boolean
+  style : Option string
+  explode : Option boolean
+  allowReserved : Option boolean
+  schema : Option any
+  «example» : Option any
+  examples : Option (objectMap fun _ => any)
+deriving ToJson, FromJson
+
+def header : JsonSchema Header := JsonSchema.ofLeanJson
+
+structure Response where
+  description : string
+  headers : Option (objectMap fun _ => refObj.orElse header)
+  content : Option (objectMap fun _ => mediaType)
+  links : Option (objectMap fun _ => refObj.orElse any)
+deriving ToJson, FromJson
+
+def response : JsonSchema Response := .ofLeanJson
+
+structure Responses where
+  map : Lean.RBNode String (fun _ => RefObj ⊕ Response)
+
+def Responses.get (r : Responses) (code : Http.StatusCode) : Option (RefObj ⊕ Response) :=
+  let code := toString code.val
+  r.map.find compare code
+  |>.orElse fun () =>
+  r.map.find compare s!"{code.get 0}XX"
+  |>.orElse fun () =>
+  r.map.find compare "default"
+
+def responses : JsonSchema Responses :=
+  JsonSchema.objectMap (fun _ => refObj.orElse response)
+  |>.map (⟨·⟩) (·.map)
+
+end Responses
+
+section Paths
 
 structure Operation where
   tags : Option (array string)
   (summary description : Option string)
   externalDocs : Option externalDocs
   operationId : Option string
-  parameters : Option (array (reference.orElse parameter))
-  requestBody : Option (reference.orElse requestBody)
-  --responses : Responses
+  parameters : Option (array (refObj.orElse parameter))
+  requestBody : Option (refObj.orElse requestBody)
+  responses : Option responses
   --callbacks : Lean.RBMap String (MaybeRef Callback)
   deprecated : Option boolean
   --security : Option (Array SecurityRequirement)
   servers : Option (array server)
-deriving ToJson, FromJson
+deriving ToJson, FromJson, Inhabited
 
 def operation : JsonSchema Operation where
 
 structure PathItem (pt : PathTemplate) where
+  «$ref» : Option reference
   summary : Option string
   description : Option string
   (get put post delete options head patch trace : Option operation)
   servers : Option (array server)
-  parameters : Option (array (reference.orElse parameter)) 
+  parameters : Option (array (refObj.orElse parameter))
 deriving Inhabited, Repr, ToJson, FromJson
+
+def PathItem.ops (i : PathItem pt) : List (Http.Method × operation) :=
+  [ i.get     |>.map (⟨.GET, ·⟩)
+  , i.put     |>.map (⟨.PUT, ·⟩)
+  , i.post    |>.map (⟨.POST, ·⟩)
+  , i.delete  |>.map (⟨.DELETE, ·⟩)
+  , i.options |>.map (⟨.OPTIONS, ·⟩)
+  , i.head    |>.map (⟨.HEAD, ·⟩)
+  , i.patch   |>.map (⟨.PATCH, ·⟩)
+  , i.trace   |>.map (⟨.TRACE, ·⟩)
+  ].filterMap id
 
 def pathItem (pt) : JsonSchema (PathItem pt) where
 
 def paths : JsonSchema (RBNode String fun _ =>
-    (pt : PathTemplate) × (Reference ⊕ PathItem pt)
-  ) := objectMap (fun path =>
-  guard (pathTemplate path) fun pt => reference.orElse (pathItem pt))
+    (pt : PathTemplate) × PathItem pt
+  ) := objectMap (fun path => guard (pathTemplate path) pathItem)
 
 end Paths
 
 structure Components where
-  --schemas : Lean.RBMap String (MaybeRef Schema) compare
-  --responses : Lean.RBMap String (MaybeRef Response) compare
-  parameters : objectMap (fun _ => reference.orElse parameter)
-  --examples : Lean.RBMap String (MaybeRef Example) compare
-  --requestBodies : Lean.RBMap String (MaybeRef RequestBody) compare
-  --headers : Lean.RBMap String (MaybeRef Header) compare
-  --securitySchemes : Lean.RBMap String (MaybeRef SecurityScheme) compare
-  --links : Lean.RBMap String (MaybeRef Link) compare
-  --callbacks : Lean.RBMap String (MaybeRef Callback) compare
+  --schemas         : Option <| objectMap (fun _ => reference.orElse schema)
+  responses       : Option <| objectMap (fun _ => reference.orElse response)
+  parameters      : Option <| objectMap (fun _ => reference.orElse parameter)
+  --examples        : Option <| objectMap (fun _ => reference.orElse example)
+  requestBodies   : Option <| objectMap (fun _ => reference.orElse requestBody)
+  --headers         : Option <| objectMap (fun _ => reference.orElse header)
+  --securitySchemes : Option <| objectMap (fun _ => reference.orElse securityScheme)
+  --links           : Option <| objectMap (fun _ => reference.orElse link)
+  --callbacks       : Option <| objectMap (fun _ => reference.orElse callback)
 deriving ToJson, FromJson
 
 structure OpenAPI where
@@ -217,10 +284,3 @@ structure OpenAPI where
   --tags        : Option <| Array Tag
   externalDocs : Option externalDocs
 deriving ToJson, FromJson
-
-#eval do
-  let str ← IO.FS.readFile "examples/api.github.com.json"
-  let json ← IO.ofExcept <| Lean.Json.parse str
-  let spec : OpenAPI ← IO.ofExcept <| Lean.FromJson.fromJson? json
-  let ⟨a,b,c⟩ ← IO.ofExcept <| Option.getDM (m := Except String) (spec.paths.val.lowerBound compare "/rz" none) (throw "hi")
-  return a

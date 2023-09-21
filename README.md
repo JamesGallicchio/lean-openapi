@@ -10,4 +10,5 @@ This implements a subset of OpenAPI. See `Limitations`.
 
 A list of features of OpenAPI not (yet!) supported. PRs welcome :-)
 
-- 
+- Some restrictions on parameter objects are not enforced.
+- Parameter object's `allowEmptyValue` field is always ignored.

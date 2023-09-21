@@ -35,6 +35,21 @@ instance : CoeSort (JsonSchema α) Type := ⟨JsonValue⟩
 
 namespace JsonSchema
 
+def map (f : α → β) (finv : β → α) (s : JsonSchema α) : JsonSchema β where
+  toJson := s.toJson ∘ finv
+  fromJson? := (f <$> s.fromJson? ·)
+
+def any : JsonSchema Lean.Json where
+  toJson := id
+  fromJson? := pure
+
+def ofLeanJson [T : Lean.ToJson α] [F : Lean.FromJson α] : JsonSchema α where
+
+def addFailingJson (s : JsonSchema α) : JsonSchema α where
+  toJson := s.toJson
+  fromJson? := fun j =>
+    s.fromJson? j |>.mapError (s!"{·}\n{j.pretty}")
+
 /-! Primitive data types -/
 
 def integer : JsonSchema Int where
@@ -47,11 +62,11 @@ def boolean : JsonSchema Bool where
 
 /-! Arrays -/
 
-def array (s : JsonSchema α) : JsonSchema (Array α) where
-  toJson x := .arr (x.map s.toJson)
+def array (s : JsonSchema α) : JsonSchema (Array (JsonValue s)) where
+  toJson x := .arr (x.map (s.toJson ·.val))
   fromJson? x :=
     match x with
-    | .arr a => a.mapM s.fromJson?
+    | .arr a => a.mapM (s.fromJson? · |>.map (⟨·⟩))
     | _ => .error "expected array"
 
 /-! Objects -/
@@ -91,3 +106,57 @@ def orElse (s1 : JsonSchema α) (s2 : JsonSchema β) : JsonSchema (α ⊕ β) wh
   toJson | .inl a => s1.toJson a | .inr b => s2.toJson b
   fromJson? j :=
     (s1.fromJson? j |>.map .inl) |>.orElseLazy fun () => (s2.fromJson? j |>.map .inr)
+
+/-! References -/
+
+inductive Reference
+| pointer (tokens : List String)
+
+def reference : JsonSchema Reference where
+  toJson
+  | .pointer toks => .str <| toks.foldl (· ++ "/" ++ tokenEncode ·) "#"
+  fromJson? j :=
+    match j with
+    | .str s => do
+      unless s.startsWith "#" do
+        throw "expected fragment, starting with #"
+      let segs := s.drop 1 |>.splitOn (sep := "/") |>.drop 1 |>.map tokenDecode
+      return .pointer segs
+    | _ => throw "expected reference: got not-a-string"
+where
+  tokenEncode (s : String) :=
+    s.replace (pattern := "~") (replacement := "~0")
+    |>.replace (pattern := "/") (replacement := "~1")
+  tokenDecode (s : String) :=
+    s.replace (pattern := "~1") (replacement := "/")
+    |>.replace (pattern := "~0") (replacement := "~")
+
+structure RefObj where
+  «$ref» : reference
+deriving Lean.ToJson, Lean.FromJson
+
+def refObj : JsonSchema RefObj := JsonSchema.ofLeanJson
+
+private def resolvePointer (j : Lean.Json) (p : List String) : Except String Lean.Json := do
+  match p with
+  | [] => return j
+  | t::p =>
+  match j with
+  | .obj m =>
+    let some j' := m.find compare t | throw s!"object does not contain key {t}"
+    resolvePointer j' p
+  | .arr a =>
+    let some i := t.toNat? | throw s!"referencing array element, but reference token {t} is not a number"
+    let some j' := a[i]? | throw s!"reference token {t} out of range of array"
+    resolvePointer j' p
+  | _ => throw "referencing a value that is not an object or array"
+
+def resolveRef (j : Lean.Json) (expectedSchema : JsonSchema α) (r : Reference)
+      : Except String (JsonValue expectedSchema) :=
+  match r with
+  | .pointer p => resolvePointer j p |>.bind Lean.FromJson.fromJson?
+
+def resolveRefOr (j : Lean.Json) (v : JsonValue (refObj.orElse s)) : Except String (JsonValue s) :=
+  match v.val with
+  | .inl r => resolveRef j s r.«$ref».val
+  | .inr v => pure ⟨v⟩
