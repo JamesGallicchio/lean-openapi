@@ -142,7 +142,7 @@ structure Parameter where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option any
+  schema : Option coreSchema
   «example» : Option any
   examples : Option (objectMap fun _ => any)
 deriving ToJson, FromJson

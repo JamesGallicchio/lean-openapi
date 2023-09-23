@@ -160,3 +160,54 @@ def resolveRefOr (j : Lean.Json) (v : JsonValue (refObj.orElse s)) : Except Stri
   match v.val with
   | .inl r => resolveRef j s r.«$ref».val
   | .inr v => pure ⟨v⟩
+
+/-! JsonSchema for JsonSchema -/
+
+namespace CoreSchema
+
+inductive «Type»
+| integer | number | string | object
+deriving Lean.ToJson, Lean.FromJson
+
+def Type.toType : «Type» → Type
+| .integer => Int
+| .number => Lean.JsonNumber
+| .string => String
+| .object => Lean.RBNode String (fun _ => Lean.Json)
+
+def Type.toJsonSchema (c : «Type») : JsonSchema c.toType :=
+  match c with
+  | .integer => JsonSchema.integer
+  | .number  => JsonSchema.number
+  | .string  => JsonSchema.string
+  | .object  => JsonSchema.objectMap fun _ => any
+
+end CoreSchema
+
+inductive CoreSchema
+| mk
+  (type : Option CoreSchema.«Type»)
+  (oneOf : Option (Array CoreSchema))
+
+def CoreSchema.toJson : CoreSchema → Lean.Json
+| .mk type oneOf => Id.run do
+  let mut res := Lean.RBNode.leaf
+  for _h : ty in type do
+    res := res.insert compare "type" (Lean.ToJson.toJson ty)
+  for _h : ss in oneOf do
+    res := res.insert compare "oneOf"
+      (Lean.ToJson.toJson
+        (← (ss.pmap
+          (fun (s : CoreSchema) (h : ∃ i, ss[i] = s) =>
+            have : sizeOf s < 1 + sizeOf type + sizeOf oneOf := sorry
+            toJson s
+      ))))
+  return .obj res
+termination_by _ s => sizeOf s
+
+def coreSchema : JsonSchema (CoreSchema) where
+  toJson cs :=
+    match cs with
+    | .mk type oneOf => sorry
+  fromJson? j :=
+    sorry

@@ -23,7 +23,6 @@ open OpenAPI
 open Lean Elab Meta Command
 
 scoped elab "genOpenAPI!" s:str : command => do
-  let ctx ← read
   let f : System.FilePath := s.getString
 
   let fileContents ← IO.FS.readFile f
@@ -97,7 +96,7 @@ scoped elab "genOpenAPI!" s:str : command => do
 
       elabCommand (← `(
         $(Lean.mkDocComment docstring):docComment
-        def $id := $(quote <| (toJson (op)).pretty)
+        def $id := $(quote <| (toJson (itemParams ++ params)).pretty)
       ))
       
       if deprecated then
@@ -109,4 +108,4 @@ namespace Examples.GitHub
 genOpenAPI! "examples/api.github.com.json"
 end GitHub
 
-#eval IO.println GitHub.«users/unblock»
+#eval IO.println GitHub.«repos/list-pull-requests-associated-with-commit»
