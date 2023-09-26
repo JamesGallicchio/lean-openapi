@@ -30,12 +30,12 @@ def Array.forall_of_all {A : Array α} (f : α → Bool) :
 
 namespace Lean.RBNode
 
-inductive Mem {α} {β : α → Type} : ((a : α) ×' β a) → RBNode α β → Prop
+inductive Mem {α} {β : α → Type} : ((a : α) × β a) → RBNode α β → Prop
 | here (a : α) (x : β a) : Mem ⟨a, x⟩ (.node c L a x R)
 | left  : Mem a L → Mem a (.node c L a' x R)
 | right : Mem a R → Mem a (.node c L a' x R)
 
-instance : Membership ((a : α) ×' β a) (RBNode α β) := ⟨Mem⟩
+instance : Membership ((a : α) × β a) (RBNode α β) := ⟨Mem⟩
 
 def pmap (n : RBNode α β) (f : (a : α) → (b : β a) → ⟨a,b⟩ ∈ n → γ a) : RBNode α γ :=
   match n with
@@ -57,6 +57,49 @@ theorem forall_of_all (n : RBNode α β) (h : n.all p) : ∀ a b, ⟨a,b⟩ ∈ 
       exact Lih h.1.2 hab
     case right hab =>
       exact Rih h.2 hab
+
+theorem lt_sizeOf_of_mem (m : Lean.RBNode α β) [SizeOf α] [∀ a, SizeOf (β a)] {a : α} {b : β a} (h : ⟨a,b⟩ ∈ m)
+  : sizeOf b < sizeOf m := by
+  induction m with
+  | leaf => contradiction
+  | node c l k v r lih rih =>
+    cases h <;> simp
+    case here =>
+      simp [Nat.add_comm _ (sizeOf b), Nat.add_assoc (sizeOf b)]
+      apply Nat.lt_add_of_pos_right
+      simp [Nat.add_assoc 1]; rw [Nat.add_comm]; apply Nat.succ_pos
+    case left h =>
+      apply Nat.lt_trans (lih h)
+      rw [Nat.add_comm _ (sizeOf l), ←Nat.add_assoc _ 1]
+      repeat (first | apply Nat.lt_succ_self | apply Nat.lt_add_right)
+    case right h =>
+      apply Nat.lt_trans (rih h)
+      apply Nat.lt_add_of_pos_left
+      simp [Nat.add_assoc 1]; rw [Nat.add_comm]; apply Nat.succ_pos
+
+theorem keys_eq_of_findCore_some (m : Lean.RBNode α β) (h : m.findCore cmp a = some ⟨a',b⟩) : cmp a a' = .eq := by
+  induction m with
+  | leaf => simp [findCore] at h
+  | node c l k v r lih rih =>
+    simp [findCore] at h
+    split at h
+    · exact lih h
+    · exact rih h
+    · simp at h; cases h
+      assumption
+
+theorem mem_of_findCore (m : Lean.RBNode α β) (h : m.findCore cmp a = some ⟨a',b⟩) : ⟨a',b⟩ ∈ m := by
+  induction m with
+  | leaf => simp [findCore] at h
+  | node c l k v r lih rih =>
+    simp [findCore] at h
+    split at h
+    · exact .left <| lih h
+    · exact .right <| rih h
+    · simp at h; cases h
+      apply Mem.here
+
+end Lean.RBNode
 
 instance [Inhabited α] [Inhabited β] : Inhabited ((_ : α) × β) where
   default := ⟨default, default⟩

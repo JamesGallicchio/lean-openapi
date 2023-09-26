@@ -39,7 +39,7 @@ scoped elab "genOpenAPI!" s:str : command => do
       throwError s!"failed to validate json against OAI schema: {e}"
 
   let server ← do
-    let servers := api.servers.map (·.val) |>.getD #[] |>.map (·.val)
+    let servers : Array _ := api.servers |>.getD #[]
     match servers[0]? with
     | none => throwError s!"API does not list a top-level server!"
     | some s =>
@@ -47,7 +47,7 @@ scoped elab "genOpenAPI!" s:str : command => do
       logWarning s!"API lists multiple top-level servers..."
     pure s
 
-  for ⟨path, pt, item⟩ in api.paths.val.toArray do
+  for ⟨path, pt, item⟩ in api.paths.val.val.toArray do
     if item.«$ref».isSome then
       logWarning s!"Path {path} has a $ref item. This is not currently supported."; continue
     
@@ -55,43 +55,42 @@ scoped elab "genOpenAPI!" s:str : command => do
       logWarning s!"Path {path} lists more servers (not supported)"; continue
 
     match
-      item.parameters.map (·.val)
+      item.parameters
         |>.getD #[]
         |>.mapM (fun p => show Except String _ from do
           let p ← JsonSchema.resolveRefOr json p
-          return p.val)
+          return p)
     with
     | .error e =>
       logWarning s!"Path {path} parameter resolution failed:\n{e}"
       continue
     | .ok itemParams =>
 
-    for (method, ⟨op⟩) in item.ops do
-      let some id := op.operationId.map (mkIdent ·.val)
+    for (method, op) in item.ops do
+      let some id := op.operationId.map (mkIdent ∘ Name.mkSimple)
         | logWarning s!"{method} on {path} does not have operation id"; continue
       
       -- Construct the docstring from a bunch of potential doc elements
       let docstring :=
-        [ item.summary.map ("### " ++·.val)
-        , op.summary.map ("#### " ++ ·.val)
-        , item.description.map (·.val)
-        , op.description.map (·.val)
+        [ item.summary.map ("### " ++ ·)
+        , op.summary.map ("#### " ++ ·)
+        , item.description
+        , op.description
         , op.externalDocs.map (fun ed =>
-          s!"{ed.val.description.map (·.val) |>.getD "Documentation"
-            }: {ed.val.url.val}")
+          s!"{ed.description |>.getD "Documentation" |>.val}: {ed.url.val}")
         ].filterMap _root_.id
         |> String.intercalate "\n\n"
       
-      let deprecated := op.deprecated.map (·.val) |>.getD false
+      let deprecated := op.deprecated |>.getD false
 
       match
-        op.parameters.map (·.val)
+        op.parameters
         |>.getD #[]
         |>.mapM (fun p => show Except String _ from do
           let p ← JsonSchema.resolveRefOr json p
-          return p.val)
+          return p)
       with
-      | .error e => logWarning s!"Error processing parameters for {method} on {path}:\n{e}"
+      | .error e => logWarning s!"Error resolving parameter references for {method} on {path}:\n{e}"
       | .ok params =>
 
       elabCommand (← `(
@@ -99,7 +98,7 @@ scoped elab "genOpenAPI!" s:str : command => do
         def $id := $(quote <| (toJson (itemParams ++ params)).pretty)
       ))
       
-      if deprecated then
+      if deprecated.val then
         elabCommand (← `(
           attribute [deprecated] $id
         ))

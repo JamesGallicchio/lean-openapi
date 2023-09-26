@@ -68,51 +68,56 @@ decreasing_by
 
 section Info
 
-structure Contact where
-  name  : Option string
-  url   : Option string
-  email : Option string
-deriving ToJson, FromJson
+def contact := objSchema {
+  schemas := {
+    "name" : string,
+    "url"  : string,
+    "email": string
+  }
+  required := []
+}
 
-def contact : JsonSchema Contact where
+def license := objSchema {
+  schemas := {
+    "name" : string,
+    "url"  : string
+  }
+  required := ["name"]
+}
 
-structure License where
-  name : string
-  url : Option string
-deriving ToJson, FromJson
-
-def license : JsonSchema License where
-
-structure Info where
-  title : string
-  description : Option string
-  termsOfService : Option string
-  contact : Option contact
-  license : Option license
-  version : string
-deriving ToJson, FromJson
-
-def info : JsonSchema Info where
+def info := objSchema {
+  schemas := {
+    "title" : string
+  , "description" : string
+  , "termsOfService" : string
+  , "contact" : contact
+  , "license" : license
+  , "version" : string
+  }
+  required := ["title", "version"]
+}
 
 end Info
 
 section Server
 
-structure ServerVariable where
-  enum : Option (array string)
-  default : string
-  description : Option string
-deriving ToJson, FromJson
+def serverVariable := objSchema {
+  schemas := {
+    "enum" : array string
+  , "default" : string
+  , "description" : string
+  }
+  required := ["default"]
+}
 
-def serverVariable : JsonSchema ServerVariable where
-
-structure Server where
-  url : string
-  description : Option string
-  variables : Option (objectMap (fun _ => serverVariable))
-deriving ToJson, FromJson
-
-def server : JsonSchema Server where
+def server := objSchema {
+  schemas :=
+  { "url" : string
+  , "description" : string
+  , "variables" : objectMap (fun _ => serverVariable)
+  }
+  required := ["url"]
+}
 
 end Server
 
@@ -183,7 +188,7 @@ structure Header where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option any
+  schema : Option coreSchema
   «example» : Option any
   examples : Option (objectMap fun _ => any)
 deriving ToJson, FromJson
@@ -199,49 +204,58 @@ deriving ToJson, FromJson
 
 def response : JsonSchema Response := .ofLeanJson
 
-structure Responses where
-  map : Lean.RBNode String (fun _ => RefObj ⊕ Response)
+def Responses := ObjSchema.toType ⟨fun _ => refObj.orElse response, []⟩
 
 def Responses.get (r : Responses) (code : Http.StatusCode) : Option (RefObj ⊕ Response) :=
   let code := toString code.val
-  r.map.find compare code
+  r.val.find compare code
   |>.orElse fun () =>
-  r.map.find compare s!"{code.get 0}XX"
+  r.val.find compare s!"{code.get 0}XX"
   |>.orElse fun () =>
-  r.map.find compare "default"
+  r.val.find compare "default"
 
-def responses : JsonSchema Responses :=
-  JsonSchema.objectMap (fun _ => refObj.orElse response)
-  |>.map (⟨·⟩) (·.map)
+def responses : JsonSchema Responses := objSchema _
 
 end Responses
 
 section Paths
 
-structure Operation where
-  tags : Option (array string)
-  (summary description : Option string)
-  externalDocs : Option externalDocs
-  operationId : Option string
-  parameters : Option (array (refObj.orElse parameter))
-  requestBody : Option (refObj.orElse requestBody)
-  responses : Option responses
-  --callbacks : Lean.RBMap String (MaybeRef Callback)
-  deprecated : Option boolean
-  --security : Option (Array SecurityRequirement)
-  servers : Option (array server)
-deriving ToJson, FromJson, Inhabited
+def operation := objSchema {
+  schemas :=
+    { "tags" : array string
+    , "summary" : string
+    , "description" : string
+    , "externalDocs" : externalDocs
+    , "operationId" : string
+    , "parameters" : array (refObj.orElse parameter)
+    , "requestBody" : refObj.orElse requestBody
+    , "responses" : responses
+    --, callbacks : Lean.RBMap String (MaybeRef Callback)
+    , "deprecated" : boolean
+    --, "security" : Array SecurityRequirement
+    , "servers" : array server
+    }
+  required := []
+}
 
-def operation : JsonSchema Operation where
-
-structure PathItem (pt : PathTemplate) where
-  «$ref» : Option reference
-  summary : Option string
-  description : Option string
-  (get put post delete options head patch trace : Option operation)
-  servers : Option (array server)
-  parameters : Option (array (refObj.orElse parameter))
-deriving Inhabited, Repr, ToJson, FromJson
+def pathItem (pt : PathTemplate) := objSchema {
+  schemas :=
+  { "$ref" : reference
+  , "summary" : string
+  , "description" : string
+  , "get" : operation
+  , "put" : operation
+  , "post" : operation
+  , "delete" : operation
+  , "options" : operation
+  , "head" : operation
+  , "patch" : operation
+  , "trace" : operation
+  , "servers" : (array server)
+  , "parameters" : (array (refObj.orElse parameter))
+  }
+  required := []
+}
 
 def PathItem.ops (i : PathItem pt) : List (Http.Method × operation) :=
   [ i.get     |>.map (⟨.GET, ·⟩)
@@ -254,11 +268,9 @@ def PathItem.ops (i : PathItem pt) : List (Http.Method × operation) :=
   , i.trace   |>.map (⟨.TRACE, ·⟩)
   ].filterMap id
 
-def pathItem (pt) : JsonSchema (PathItem pt) where
 
-def paths : JsonSchema (RBNode String fun _ =>
-    (pt : PathTemplate) × PathItem pt
-  ) := objectMap (fun path => guard (pathTemplate path) pathItem)
+def Paths := ObjSchema.toType ⟨fun path => guard (pathTemplate path) pathItem, []⟩
+def paths : JsonSchema Paths := objSchema _
 
 end Paths
 

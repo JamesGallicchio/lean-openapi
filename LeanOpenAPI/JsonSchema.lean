@@ -23,13 +23,12 @@ namespace LeanOpenAPI
 
 structure JsonSchema (α) extends Lean.FromJson α, Lean.ToJson α where
 
-structure JsonValue (s : JsonSchema α) where
-  val : α
-deriving Inhabited
+def JsonValue (_s : JsonSchema α) := α
+def JsonValue.val {s : JsonSchema α} (v : JsonValue s) : α := v
 
-instance : Repr (JsonValue s) := ⟨(s.toJson ·.val |> reprPrec)⟩
-instance : Lean.FromJson (JsonValue s) := ⟨fun j => s.fromJson? j |>.map (⟨·⟩)⟩
-instance : Lean.ToJson (JsonValue s) := ⟨fun x => s.toJson x.val⟩
+instance : Repr (JsonValue s) := ⟨(s.toJson · |> reprPrec)⟩
+instance : Lean.FromJson (JsonValue s) := ⟨s.fromJson?⟩
+instance : Lean.ToJson (JsonValue s) := ⟨s.toJson⟩
 
 instance : CoeSort (JsonSchema α) Type := ⟨JsonValue⟩
 
@@ -44,6 +43,8 @@ def any : JsonSchema Lean.Json where
   fromJson? := pure
 
 def ofLeanJson [T : Lean.ToJson α] [F : Lean.FromJson α] : JsonSchema α where
+  toJson := T.toJson
+  fromJson? := F.fromJson?
 
 def addFailingJson (s : JsonSchema α) : JsonSchema α where
   toJson := s.toJson
@@ -52,39 +53,120 @@ def addFailingJson (s : JsonSchema α) : JsonSchema α where
 
 /-! Primitive data types -/
 
-def integer : JsonSchema Int where
+def integer : JsonSchema Int := ofLeanJson
 
-def number : JsonSchema Lean.JsonNumber where
+def number : JsonSchema Lean.JsonNumber := ofLeanJson
 
-def string : JsonSchema String where
+def string : JsonSchema String := ofLeanJson
 
-def boolean : JsonSchema Bool where
+def boolean : JsonSchema Bool := ofLeanJson
 
 /-! Arrays -/
 
 def array (s : JsonSchema α) : JsonSchema (Array (JsonValue s)) where
-  toJson x := .arr (x.map (s.toJson ·.val))
+  toJson x := .arr (x.map (s.toJson ·))
   fromJson? x :=
     match x with
-    | .arr a => a.mapM (s.fromJson? · |>.map (⟨·⟩))
+    | .arr a => a.mapM (s.fromJson? · |>.map (·))
     | _ => .error "expected array"
 
 /-! Objects -/
 
-/-- For a given key, if that key exists, specify the schema
-    that applies to that key -/
-def objectMap (f : (s : String) → JsonSchema (α s)) : JsonSchema (Lean.RBNode String α) where
-  toJson x := .obj (x.map (f · |>.toJson))
+structure ObjSchema (α : String → Type) where
+  schemas : (s : String) → JsonSchema (α s)
+  required : List String
+
+def ObjSchema.toType (os : ObjSchema α) :=
+  { m : Lean.RBNode String (os.schemas ·) //
+    ∀ key ∈ os.required, ∃ j, m.findCore compare key = some ⟨key,j⟩ }
+
+instance : CoeSort (ObjSchema α) Type where
+  coe := ObjSchema.toType
+
+def ObjSchema.toType.get {os : ObjSchema α} (v : os) (s : String) (h : s ∈ os.required := by decide)
+  : α s :=
+  match h' : v.val.findCore compare s with
+  | some ⟨s',x⟩ =>
+    have : s = s' := by
+      have := v.val.keys_eq_of_findCore_some h'
+      simp [compare, compareOfLessAndEq] at this
+      split at this <;>
+        first | contradiction
+              | split at this <;> first | contradiction | assumption
+    this ▸ x.val
+  | none => False.elim <| by
+    have ⟨sv,h⟩ := v.property _ h
+    rw [h'] at h
+    contradiction
+
+def ObjSchema.toType.get? {os : ObjSchema α} (v : os) (s : String)
+  : Option (α s) :=
+  v.val.findCore compare s |>.pmap (fun ⟨s',x⟩ h' =>
+    have : s = s' := by
+      have := v.val.keys_eq_of_findCore_some h'
+      simp [compare, compareOfLessAndEq] at this
+      split at this <;>
+        first | contradiction
+              | split at this <;> first | contradiction | assumption
+    this ▸ x.val
+  ) (fun _ => id)
+
+def objSchema (os : ObjSchema α) : JsonSchema os where
+  toJson v := .obj <| v.val.map (fun s x => os.schemas s |>.toJson x)
   fromJson? j :=
     match j with
-    | .obj m => m.mapM (f · |>.fromJson? ·)
-    | _ => .error "expected object"
+    | .obj m => do
+      let m ← m.mapM (os.schemas · |>.fromJson?)
+      match h : os.required.find? (m.findCore compare · |>.isNone) with
+      | some s => throw s!"object expected to have key \"{s}\": {j}"
+      | none => return ⟨m, by
+        intro key hk
+        simp [List.find?_eq_none] at h
+        have := h key hk
+        simp [Option.isNone] at this; split at this <;> try contradiction
+        rename_i v h'
+        rcases v with ⟨a,b⟩
+        have := Lean.RBNode.keys_eq_of_findCore_some _ h'
+        simp [compare, compareOfLessAndEq] at this
+        split at this <;> first | contradiction | split at this <;> try contradiction
+        subst_vars
+        exact ⟨_, h'⟩
+        ⟩
+    | _ => .error s!"expected object, got: {j}"
+
+#check show (x : Bool) → if x = false then Unit else Bool from
+  fun x => iteInduction (c := x = false) (motive := id) (fun _ => ()) (fun _ => true)
+
+open Lean Macro Elab Term in
+scoped macro "{" pairs:( str ":" term ),* "}" : term => do
+  let ss' := pairs.getElems.map (fun s =>
+    let key := s.raw[0].isStrLit?.get!
+    let val : Syntax := s.raw[2]
+    (key, (.mk val : TSyntax `term)))
+  let eα ← `(fun (s : String) => $(
+    ← ss'.foldrM
+      (fun (k,_v) e => `(if s = $(Syntax.mkStrLit k) then _ else $e))
+      (← `(Lean.Json))
+    ))
+  let eschemas ← `(fun (s : String) =>
+    show JsonSchema ($eα s) from $(
+    ← ss'.foldrM
+      (fun (k,v) e => `(
+        iteInduction (c := s = $(Syntax.mkStrLit k)) (motive := id) (fun _ => $v) (fun _ => $e)))
+      (← `(any))
+  ))
+  return eschemas
+
+/-- For a given key, if that key exists, specify the schema
+    that applies to that key -/
+def objectMap {α : String → Type} (f : (s : String) → JsonSchema (α s))
+  := objSchema ⟨f, []⟩
 
 /-! Subtypes (arbitrary properties on top of a given schema) -/
 
 def withProperty (s : JsonSchema α) (errString : String) (p : α → Bool)
-  : JsonSchema { a : α // p a } where
-  toJson x := s.toJson x
+  : JsonSchema { a : JsonValue s // p a } where
+  toJson x := s.toJson x.val
   fromJson? j := do
     let a ← s.fromJson? j
     if h : p a then
@@ -102,7 +184,7 @@ def guard {β : α → Type} (f : Except String α) (g : (a : α) → JsonSchema
 
 /-! Either -/
 
-def orElse (s1 : JsonSchema α) (s2 : JsonSchema β) : JsonSchema (α ⊕ β) where
+def orElse (s1 : JsonSchema α) (s2 : JsonSchema β) : JsonSchema (JsonValue s1 ⊕ JsonValue s2) where
   toJson | .inl a => s1.toJson a | .inr b => s2.toJson b
   fromJson? j :=
     (s1.fromJson? j |>.map .inl) |>.orElseLazy fun () => (s2.fromJson? j |>.map .inr)
@@ -157,30 +239,37 @@ def resolveRef (j : Lean.Json) (expectedSchema : JsonSchema α) (r : Reference)
   | .pointer p => resolvePointer j p |>.bind Lean.FromJson.fromJson?
 
 def resolveRefOr (j : Lean.Json) (v : JsonValue (refObj.orElse s)) : Except String (JsonValue s) :=
-  match v.val with
-  | .inl r => resolveRef j s r.«$ref».val
-  | .inr v => pure ⟨v⟩
+  match v with
+  | .inl r => resolveRef j s r.«$ref»
+  | .inr v => pure v
 
 /-! JsonSchema for JsonSchema -/
 
 namespace CoreSchema
 
 inductive «Type»
-| integer | number | string | object
+| integer | number | boolean | string | array | object
 deriving Lean.ToJson, Lean.FromJson
 
 def Type.toType : «Type» → Type
 | .integer => Int
 | .number => Lean.JsonNumber
+| .boolean => Bool
 | .string => String
-| .object => Lean.RBNode String (fun _ => Lean.Json)
+| .array => Array Lean.Json
+| .object => ObjSchema.toType ⟨fun _ => any, []⟩
 
 def Type.toJsonSchema (c : «Type») : JsonSchema c.toType :=
   match c with
   | .integer => JsonSchema.integer
   | .number  => JsonSchema.number
+  | .boolean => JsonSchema.boolean
   | .string  => JsonSchema.string
+  | .array   => JsonSchema.array any
   | .object  => JsonSchema.objectMap fun _ => any
+
+def type : JsonSchema «Type» :=
+  JsonSchema.ofLeanJson |>.addFailingJson
 
 end CoreSchema
 
@@ -188,26 +277,57 @@ inductive CoreSchema
 | mk
   (type : Option CoreSchema.«Type»)
   (oneOf : Option (Array CoreSchema))
+  (default : Option Lean.Json)
 
 def CoreSchema.toJson : CoreSchema → Lean.Json
-| .mk type oneOf => Id.run do
-  let mut res := Lean.RBNode.leaf
-  for _h : ty in type do
-    res := res.insert compare "type" (Lean.ToJson.toJson ty)
-  for _h : ss in oneOf do
-    res := res.insert compare "oneOf"
-      (Lean.ToJson.toJson
-        (← (ss.pmap
-          (fun (s : CoreSchema) (h : ∃ i, ss[i] = s) =>
-            have : sizeOf s < 1 + sizeOf type + sizeOf oneOf := sorry
+| .mk type oneOf default => .mkObj (
+    (type.map (⟨"type", Lean.ToJson.toJson ·⟩)).toList
+    ++
+    (oneOf.pmap (fun ss (_h : ss ∈ oneOf) => ("oneOf",
+      Lean.ToJson.toJson
+        (ss.pmap fun (s : CoreSchema) (h : ∃ i, ss[i] = s) =>
+            have : sizeOf s < 1 + sizeOf type + sizeOf oneOf + sizeOf default := by
+              rcases ss with ⟨ss⟩
+              rcases _h with rfl
+              rcases h with ⟨i,rfl⟩
+              simp [Array.getElem_eq_data_get]
+              apply Nat.lt_of_lt_of_le (List.sizeOf_get_lt ..)
+              simp [Nat.add_comm _ (sizeOf ss), ← Nat.add_assoc _ (sizeOf ss), Nat.add_assoc (sizeOf ss)]
+              apply Nat.le_add_right
             toJson s
-      ))))
-  return .obj res
+        )
+    )) (fun _ => id) ).toList
+  )
 termination_by _ s => sizeOf s
 
-def coreSchema : JsonSchema (CoreSchema) where
-  toJson cs :=
-    match cs with
-    | .mk type oneOf => sorry
-  fromJson? j :=
-    sorry
+def CoreSchema.fromJson : Lean.Json → Except String CoreSchema
+| .obj m => do
+  let type ← m.find compare "type" |>.mapM Lean.FromJson.fromJson?
+  let oneOf ← m
+    |>.pmap (fun _ => PSigma.mk)
+    |>.findCore compare "oneOf"
+    |>.mapM (fun ⟨a,b,h⟩ => do
+      match b with
+      | .arr bs =>
+        bs.pmap PSigma.mk |>.mapM fun ⟨b,h⟩ =>
+          have : sizeOf b < 1 + sizeOf m := by
+            rcases h with ⟨i,rfl⟩
+            apply Nat.lt_trans
+            · apply Array.sizeOf_get
+            clear i b
+            rw [Nat.add_comm]; apply Nat.lt_succ_of_lt
+            have := Lean.RBNode.lt_sizeOf_of_mem m h
+            simp at this
+            apply Nat.lt_trans (Nat.lt_add_of_pos_left Nat.zero_lt_one)
+            exact this
+          fromJson b
+      | j => .error s!"expected array of coreschemas, got: {j}")
+  let default := m.find compare "default"
+  return .mk type oneOf default
+| j =>
+  .error s!"expected coreschema (object), got: {j}"
+termination_by _ j => sizeOf j
+
+def coreSchema : JsonSchema CoreSchema where
+  toJson cs := cs.toJson
+  fromJson? j := CoreSchema.fromJson j
