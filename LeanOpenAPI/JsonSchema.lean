@@ -278,12 +278,16 @@ Lean structures currently don't have good enough support
 for nested inductives for this to not be hugely painful. -/
 
 structure Res where
+  name : Lean.Ident
   type : Lean.Expr
   default : Option Lean.Expr
 
 def fromJson? (j : Lean.Json) : Except String Res := do
-  let type ← j.getObjVal? "type"
+  let oneOf   := Except.toOption <| j.getObjVal? "oneOf"
+  let nullable:= Except.toOption <| j.getObjVal? "nullable"
+  let type    := Except.toOption <| j.getObjVal? "type"
   let format  := Except.toOption <| j.getObjVal? "format"
+  let properties := Except.toOption <| j.getObjVal? "properties"
   let default := Except.toOption <| j.getObjVal? "default"
   let enum    := Except.toOption <| j.getObjVal? "enum"
   let minimum := Except.toOption <| j.getObjVal? "minimum"
