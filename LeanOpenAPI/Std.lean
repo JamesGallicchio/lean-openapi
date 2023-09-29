@@ -4,8 +4,8 @@ instance [Inhabited ε] : Alternative (Except ε) where
   failure := Except.error default
   orElse f g := f.orElseLazy g
 
-def Array.pmap (A : Array α) (f : (a : α) → (∃ i : Fin A.size, A[i] = a) → β) : Array β :=
-  Array.ofFn (fun i => f (A[i]) ⟨i, rfl⟩)
+def Array.pmap [DecidableEq α] (A : Array α) (f : (a : α) → a ∈ A → β) : Array β :=
+  Array.ofFn (fun (i : Fin A.size) => f (A[i]) sorry) -- the array interface is useless.
 
 def Array.forall_of_all {A : Array α} (f : α → Bool) :
     A.all f → ∀ i : Fin A.size, f A[i] := by

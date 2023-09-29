@@ -21,6 +21,11 @@ import LeanOpenAPI.Std
 
 namespace LeanOpenAPI
 
+namespace JsonSchema
+
+
+end JsonSchema
+
 structure JsonSchema (α) extends Lean.FromJson α, Lean.ToJson α where
 
 def JsonValue (_s : JsonSchema α) := α
@@ -134,9 +139,6 @@ def objSchema (os : ObjSchema α) : JsonSchema os where
         ⟩
     | _ => .error s!"expected object, got: {j}"
 
-#check show (x : Bool) → if x = false then Unit else Bool from
-  fun x => iteInduction (c := x = false) (motive := id) (fun _ => ()) (fun _ => true)
-
 open Lean Macro Elab Term in
 scoped macro "{" pairs:( str ":" term ),* "}" : term => do
   let ss' := pairs.getElems.map (fun s =>
@@ -249,7 +251,7 @@ namespace CoreSchema
 
 inductive «Type»
 | integer | number | boolean | string | array | object
-deriving Lean.ToJson, Lean.FromJson
+deriving DecidableEq, Lean.ToJson, Lean.FromJson
 
 def Type.toType : «Type» → Type
 | .integer => Int
@@ -271,63 +273,21 @@ def Type.toJsonSchema (c : «Type») : JsonSchema c.toType :=
 def type : JsonSchema «Type» :=
   JsonSchema.ofLeanJson |>.addFailingJson
 
+/- TODO: this should all be specified via structures, but
+Lean structures currently don't have good enough support
+for nested inductives for this to not be hugely painful. -/
+
+structure Res where
+  type : Lean.Expr
+  default : Option Lean.Expr
+
+def fromJson? (j : Lean.Json) : Except String Res := do
+  let type ← j.getObjVal? "type"
+  let format  := Except.toOption <| j.getObjVal? "format"
+  let default := Except.toOption <| j.getObjVal? "default"
+  let enum    := Except.toOption <| j.getObjVal? "enum"
+  let minimum := Except.toOption <| j.getObjVal? "minimum"
+  let maximum := Except.toOption <| j.getObjVal? "maximum"
+  return sorry
+
 end CoreSchema
-
-inductive CoreSchema
-| mk
-  (type : Option CoreSchema.«Type»)
-  (oneOf : Option (Array CoreSchema))
-  (default : Option Lean.Json)
-
-def CoreSchema.toJson : CoreSchema → Lean.Json
-| .mk type oneOf default => .mkObj (
-    (type.map (⟨"type", Lean.ToJson.toJson ·⟩)).toList
-    ++
-    (oneOf.pmap (fun ss (_h : ss ∈ oneOf) => ("oneOf",
-      Lean.ToJson.toJson
-        (ss.pmap fun (s : CoreSchema) (h : ∃ i, ss[i] = s) =>
-            have : sizeOf s < 1 + sizeOf type + sizeOf oneOf + sizeOf default := by
-              rcases ss with ⟨ss⟩
-              rcases _h with rfl
-              rcases h with ⟨i,rfl⟩
-              simp [Array.getElem_eq_data_get]
-              apply Nat.lt_of_lt_of_le (List.sizeOf_get_lt ..)
-              simp [Nat.add_comm _ (sizeOf ss), ← Nat.add_assoc _ (sizeOf ss), Nat.add_assoc (sizeOf ss)]
-              apply Nat.le_add_right
-            toJson s
-        )
-    )) (fun _ => id) ).toList
-  )
-termination_by _ s => sizeOf s
-
-def CoreSchema.fromJson : Lean.Json → Except String CoreSchema
-| .obj m => do
-  let type ← m.find compare "type" |>.mapM Lean.FromJson.fromJson?
-  let oneOf ← m
-    |>.pmap (fun _ => PSigma.mk)
-    |>.findCore compare "oneOf"
-    |>.mapM (fun ⟨a,b,h⟩ => do
-      match b with
-      | .arr bs =>
-        bs.pmap PSigma.mk |>.mapM fun ⟨b,h⟩ =>
-          have : sizeOf b < 1 + sizeOf m := by
-            rcases h with ⟨i,rfl⟩
-            apply Nat.lt_trans
-            · apply Array.sizeOf_get
-            clear i b
-            rw [Nat.add_comm]; apply Nat.lt_succ_of_lt
-            have := Lean.RBNode.lt_sizeOf_of_mem m h
-            simp at this
-            apply Nat.lt_trans (Nat.lt_add_of_pos_left Nat.zero_lt_one)
-            exact this
-          fromJson b
-      | j => .error s!"expected array of coreschemas, got: {j}")
-  let default := m.find compare "default"
-  return .mk type oneOf default
-| j =>
-  .error s!"expected coreschema (object), got: {j}"
-termination_by _ j => sizeOf j
-
-def coreSchema : JsonSchema CoreSchema where
-  toJson cs := cs.toJson
-  fromJson? j := CoreSchema.fromJson j
