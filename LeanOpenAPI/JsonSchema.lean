@@ -268,25 +268,40 @@ def Type.toJsonSchema (c : «Type») : SchemaM c.toType :=
 
 def type : SchemaM «Type» := JsonSchema.ofLeanJson
 
-/- TODO: this should all be specified via structures, but
-Lean structures currently don't have good enough support
+/- TODO: schema schemas should be specified via structures,
+but Lean structures currently don't have good enough support
 for nested inductives for this to not be hugely painful. -/
 
 structure Res where
   name : Lean.Ident
+  descr : Option String
   type : Lean.Expr
+  schema : Lean.Expr
+  toJson : Lean.Expr
   default : Option Lean.Expr
 
 def fromJson? (j : Lean.Json) : Except String Res := do
-  let oneOf   := Except.toOption <| j.getObjVal? "oneOf"
-  let nullable:= Except.toOption <| j.getObjVal? "nullable"
-  let type    := Except.toOption <| j.getObjVal? "type"
-  let format  := Except.toOption <| j.getObjVal? "format"
-  let properties := Except.toOption <| j.getObjVal? "properties"
-  let default := Except.toOption <| j.getObjVal? "default"
-  let enum    := Except.toOption <| j.getObjVal? "enum"
-  let minimum := Except.toOption <| j.getObjVal? "minimum"
-  let maximum := Except.toOption <| j.getObjVal? "maximum"
+  let title       := Except.toOption <| j.getObjVal? "title"
+  let description := Except.toOption <| j.getObjVal? "description"
+  let nullable    := Except.toOption <| j.getObjVal? "nullable"
+  let default     := Except.toOption <| j.getObjVal? "default"
+  -- types
+  let type        := Except.toOption <| j.getObjValAs? «Type» "type"
+  let format      := Except.toOption <| j.getObjVal? "format"
+  let enum        := Except.toOption <| j.getObjVal? "enum"
+  -- int
+  let minimum     := Except.toOption <| j.getObjVal? "minimum"
+  let maximum     := Except.toOption <| j.getObjVal? "maximum"
+  -- object
+  let properties  := Except.toOption <| j.getObjVal? "properties"
+  let required    := Except.toOption <| j.getObjVal? "required"
+  -- array
+  let items       := Except.toOption <| j.getObjVal? "items"
+  -- combinators
+  let allOf       := Except.toOption <| j.getObjVal? "allOf"
+  let oneOf       := Except.toOption <| j.getObjVal? "oneOf"
+
+  
   return sorry
 
 end CoreSchema
