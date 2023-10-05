@@ -207,6 +207,69 @@ scoped macro "{" pairs:( str ":" term ),* "}" : term => do
   ))
   return eschemas
 
+open Lean Macro Elab Meta Term Command in
+scoped elab "object " name:ident "{" keyStx:( str ":" "required "? term ),* "}" : command => do
+  -- name, required, (Lean) type, schema
+  let keys : Array (String × Bool × TSyntax `term × TSyntax `term) ←
+    liftTermElabM <| keyStx.getElems.mapM (fun s =>
+      -- unsure if this is actually necessary
+      -- but we use the mvar identifier `type` so /shrug
+      withFreshMacroScope do
+      let key := s.raw[0].isStrLit?.get!
+      let isReq := s.raw[2].hasArgs
+      let val : Term := .mk s.raw[3]
+      -- make a new metavariable for the type
+      let type : Expr ← mkFreshTypeMVar
+      let schema ← elabTermEnsuringType val (some (.app (.const ``SchemaM []) type))
+      let typeStx ← PrettyPrinter.delab (← instantiateMVars type)
+      let schemaStx ← PrettyPrinter.delab (← instantiateMVars schema)
+      return (key, isReq, typeStx, schemaStx)
+    )
+  let typeId := mkIdent (name.getId ++ "type")
+  let fields : TSyntaxArray _ ← keys.mapM (fun (name, req, type, _schema) => do
+    `(Lean.Parser.Command.structExplicitBinder|
+      -- if not required, wrap the type in Option
+      ($(mkIdent name) : $(if req then type else ← `(Option $type)))
+    )
+  )
+  let objId : Ident := mkIdent `obj
+  let fieldSchemas : TSyntaxArray _ ← keys.mapM (fun (name, req, _type, schema) => do
+    `(Lean.Parser.Term.doSeqItem|
+      let $(mkIdent name) ← $(
+        if req then ← `(sorry)
+        else ← `(Lean.RBNode.find compare $objId $(Syntax.mkStrLit name) |>.mapM $schema)
+      ):term
+    )
+  )
+  let structInstFields : TSyntaxArray _ ←
+    keys.mapM (fun (name, _req, _type, _schema) =>
+      `(Lean.Parser.Term.structInstFieldAbbrev| $(mkIdent name):ident )
+    )
+  
+  elabCommand <| ← `(
+    structure $(typeId) where
+      $fields:structExplicitBinder*
+  )
+  let stx : TSyntax `command ← `(
+    def $(name) : SchemaM $(typeId) := do
+      let $objId ← do
+        let j ← SchemaM.curJson
+        match j with
+        | .obj m => pure m
+        | _ => SchemaM.throw s!"expected {$(Syntax.mkStrLit name.getId.toString)}, got:\n{j}"
+      $fieldSchemas:doSeqItem*
+      return { $structInstFields:structInstFieldAbbrev,* }
+  )
+  IO.println (stx.raw.prettyPrint)
+  elabCommand stx
+
+set_option pp.rawOnError true
+object Hi {
+  "hi" : string
+}
+
+#eval Hi.run (.obj <| .insert compare .leaf "hi" (.str "ho")) |>.map (Hi.type.hi )
+
 /-- For a given key, if that key exists, specify the schema
     that applies to that key -/
 def objectMap {α : String → Type} (f : (s : String) → SchemaM (α s))
@@ -241,7 +304,10 @@ def orElse (s1 : SchemaM α) (s2 : SchemaM β) : SchemaM (α ⊕ β) :=
       | .error e2 =>
         .error s!"multiple failures:\n{e1}\n\n{e2}"
 
-/-! SchemaM for core schemas -/
+/-! SchemaM for core schemas
+
+INCOMPLETE. DO NOT USE.
+-/
 
 namespace CoreSchema
 
