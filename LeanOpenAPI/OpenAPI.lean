@@ -68,65 +68,55 @@ decreasing_by
 
 section Info
 
-def contact := objSchema {
-  schemas := {
-    "name" : string,
-    "url"  : string,
-    "email": string
-  }
-  required := []
-}
+structure Contact where
+  name  : Option string
+  url   : Option string
+  email : Option string
+deriving Inhabited
 
-def license := objSchema {
-  schemas := {
-    "name" : string,
-    "url"  : string
-  }
-  required := ["name"]
-}
+genStructSchema contact for Contact
 
-def info := objSchema {
-  schemas := {
-    "title" : string
-  , "description" : string
-  , "termsOfService" : string
-  , "contact" : contact
-  , "license" : license
-  , "version" : string
-  }
-  required := ["title", "version"]
-}
+structure License where
+  name : string
+  url  : Option string
+
+genStructSchema license for License
+
+structure Info where
+  title : string
+  version : string
+  description     : Option string
+  termsOfService  : Option string
+  contact         : Option contact
+  license         : Option license
+
+genStructSchema info for Info
 
 end Info
 
 section Server
 
-def serverVariable := objSchema {
-  schemas := {
-    "enum" : array string
-  , "default" : string
-  , "description" : string
-  }
-  required := ["default"]
-}
+structure ServerVariable where
+  default : string
+  enum        : Option <| array string
+  description : Option <| string
 
-def server := objSchema {
-  schemas :=
-  { "url" : string
-  , "description" : string
-  , "variables" : objectMap (fun _ => serverVariable)
-  }
-  required := ["url"]
-}
+genStructSchema serverVariable for ServerVariable
+
+structure Server where
+  url : string
+  description : Option string
+  variables : Option <| objectMap (fun _ => serverVariable)
+
+genStructSchema server for Server
 
 end Server
 
 structure ExternalDocs where
   description : Option string
   url : string
-deriving ToJson, FromJson
 
-def externalDocs : JsonSchema ExternalDocs where
+genStructSchema externalDocs for ExternalDocs
 
 section Parameter
 
@@ -134,8 +124,7 @@ inductive Parameter.In
 | query | header | path | cookie
 deriving ToJson, FromJson, Repr, Inhabited
 
-def parameter.in : JsonSchema Parameter.In :=
-  JsonSchema.ofLeanJson.addFailingJson
+def parameter.in : SchemaM Parameter.In := JsonSchema.ofLeanJson
 
 structure Parameter where
   «in» : parameter.in
@@ -147,34 +136,30 @@ structure Parameter where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option coreSchema
+  schema : Option any
   «example» : Option any
   examples : Option (objectMap fun _ => any)
-deriving ToJson, FromJson
 
-def parameter : JsonSchema Parameter :=
-  JsonSchema.ofLeanJson.addFailingJson
+genStructSchema parameter for Parameter
 
 end Parameter
 
 section RequestBody
 
 structure MediaType where
-  schema : Option Lean.Json
-  «example» : Option Lean.Json
-  examples : Option Lean.Json
-  encoding : Option Lean.Json
-deriving ToJson, FromJson
+  schema : Option any
+  «example» : Option any
+  examples : Option any
+  encoding : Option any
 
-def mediaType : JsonSchema MediaType := .ofLeanJson
+genStructSchema mediaType for MediaType
 
 structure RequestBody where
   description : Option string
   content : objectMap (fun _ => mediaType)
   required : Option boolean
-deriving ToJson, FromJson
 
-def requestBody : JsonSchema RequestBody where
+genStructSchema requestBody for RequestBody
 
 end RequestBody
 
@@ -188,76 +173,71 @@ structure Header where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option coreSchema
+  schema : Option any
   «example» : Option any
   examples : Option (objectMap fun _ => any)
-deriving ToJson, FromJson
 
-def header : JsonSchema Header := JsonSchema.ofLeanJson
+genStructSchema header for Header
 
 structure Response where
   description : string
-  headers : Option (objectMap fun _ => refObj.orElse header)
+  headers : Option (objectMap fun _ => maybeRefObj header)
   content : Option (objectMap fun _ => mediaType)
-  links : Option (objectMap fun _ => refObj.orElse any)
-deriving ToJson, FromJson
+  links : Option (objectMap fun _ => maybeRefObj any)
 
-def response : JsonSchema Response := .ofLeanJson
+genStructSchema response for Response
 
-def Responses := ObjSchema.toType ⟨fun _ => refObj.orElse response, []⟩
+def Responses := RBNode String fun _ => Response
 
-def Responses.get (r : Responses) (code : Http.StatusCode) : Option (RefObj ⊕ Response) :=
+def responses : SchemaM Responses :=
+  JsonSchema.objectMap fun _ => maybeRefObj response
+
+def Responses.get (r : Responses) (code : Http.StatusCode) : Option Response :=
   let code := toString code.val
-  r.val.find compare code
+  r.find compare code
   |>.orElse fun () =>
-  r.val.find compare s!"{code.get 0}XX"
+  r.find compare s!"{code.get 0}XX"
   |>.orElse fun () =>
-  r.val.find compare "default"
-
-def responses : JsonSchema Responses := objSchema _
+  r.find compare "default"
 
 end Responses
 
 section Paths
 
-def operation := objSchema {
-  schemas :=
-    { "tags" : array string
-    , "summary" : string
-    , "description" : string
-    , "externalDocs" : externalDocs
-    , "operationId" : string
-    , "parameters" : array (refObj.orElse parameter)
-    , "requestBody" : refObj.orElse requestBody
-    , "responses" : responses
-    --, callbacks : Lean.RBMap String (MaybeRef Callback)
-    , "deprecated" : boolean
-    --, "security" : Array SecurityRequirement
-    , "servers" : array server
-    }
-  required := []
-}
+structure Operation where
+  tags        : Option <| array string
+  summary     : Option <| string
+  description : Option <| string
+  externalDocs: Option <| externalDocs
+  operationId : Option <| string
+  parameters  : Option <| array (maybeRefObj parameter)
+  requestBody : Option <| maybeRefObj requestBody
+  responses   : Option <| responses
+  --callbacks   : Option <| objectMap (fun _ => maybeRefObj callback)
+  deprecated  : Option <| boolean
+  --security    : Option <| Array securityRequirement
+  servers     : Option <| array server
 
-def pathItem (pt : PathTemplate) := objSchema {
-  schemas :=
-  { "$ref" : reference
-  , "summary" : string
-  , "description" : string
-  , "get" : operation
-  , "put" : operation
-  , "post" : operation
-  , "delete" : operation
-  , "options" : operation
-  , "head" : operation
-  , "patch" : operation
-  , "trace" : operation
-  , "servers" : (array server)
-  , "parameters" : (array (refObj.orElse parameter))
-  }
-  required := []
-}
+genStructSchema operation for Operation
 
-def PathItem.ops (i : PathItem pt) : List (Http.Method × operation) :=
+structure PathItem where
+  «$ref» : Option reference
+  summary : Option string
+  description : Option string
+  get : Option operation
+  put : Option operation
+  post : Option operation
+  delete : Option operation
+  options : Option operation
+  head : Option operation
+  patch : Option operation
+  trace : Option operation
+  servers : Option (array server)
+  parameters : Option (array (maybeRefObj parameter))
+
+genStructSchema pathItem for PathItem
+
+def PathItem.ops (i : PathItem) : List (Http.Method × operation) :=
   [ i.get     |>.map (⟨.GET, ·⟩)
   , i.put     |>.map (⟨.PUT, ·⟩)
   , i.post    |>.map (⟨.POST, ·⟩)
@@ -269,30 +249,32 @@ def PathItem.ops (i : PathItem pt) : List (Http.Method × operation) :=
   ].filterMap id
 
 
-def Paths := ObjSchema.toType ⟨fun path => guard (pathTemplate path) pathItem, []⟩
-def paths : JsonSchema Paths := objSchema _
+def Paths := RBNode String fun path => guard (pathTemplate path) (fun _ => pathItem)
+def paths : SchemaM Paths := objectMap fun path => guard (pathTemplate path) (fun _ => pathItem)
 
 end Paths
 
 structure Components where
   --schemas         : Option <| objectMap (fun _ => reference.orElse schema)
-  responses       : Option <| objectMap (fun _ => reference.orElse response)
-  parameters      : Option <| objectMap (fun _ => reference.orElse parameter)
+  responses       : Option <| objectMap (fun _ => maybeRefObj response)
+  parameters      : Option <| objectMap (fun _ => maybeRefObj parameter)
   --examples        : Option <| objectMap (fun _ => reference.orElse example)
-  requestBodies   : Option <| objectMap (fun _ => reference.orElse requestBody)
+  requestBodies   : Option <| objectMap (fun _ => maybeRefObj requestBody)
   --headers         : Option <| objectMap (fun _ => reference.orElse header)
   --securitySchemes : Option <| objectMap (fun _ => reference.orElse securityScheme)
   --links           : Option <| objectMap (fun _ => reference.orElse link)
   --callbacks       : Option <| objectMap (fun _ => reference.orElse callback)
-deriving ToJson, FromJson
+
+genStructSchema components for Components
 
 structure OpenAPI where
   openapi : string
   info    : info
   servers     : Option <| array server
   paths       : paths
-  components  : Option Components
+  components  : Option components
   --security    : Option <| Array SecurityRequirement
   --tags        : Option <| Array Tag
   externalDocs : Option externalDocs
-deriving ToJson, FromJson
+
+genStructSchema openAPI for OpenAPI

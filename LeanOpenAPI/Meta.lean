@@ -21,6 +21,7 @@ namespace LeanOpenAPI.Meta
 open OpenAPI
 
 open Lean Elab Meta Command
+def explicitBinderF := Parser.Term.explicitBinder false
 
 scoped elab "genOpenAPI!" s:str : command => do
   let f : System.FilePath := s.getString
@@ -33,7 +34,7 @@ scoped elab "genOpenAPI!" s:str : command => do
       throwError s!"error parsing json from file: {e}"
  
   let api ←
-    match fromJson? json with
+    match openAPI.run json with
     | .ok (j : OpenAPI) => pure j
     | .error e =>
       throwError s!"failed to validate json against OAI schema: {e}"
@@ -47,24 +48,14 @@ scoped elab "genOpenAPI!" s:str : command => do
       logWarning s!"API lists multiple top-level servers..."
     pure s
 
-  for ⟨path, pt, item⟩ in api.paths.val.val.toArray do
+  for ⟨path, pt, item⟩ in api.paths.toArray do
     if item.«$ref».isSome then
       logWarning s!"Path {path} has a $ref item. This is not currently supported."; continue
     
     if item.servers.isSome then
       logWarning s!"Path {path} lists more servers (not supported)"; continue
 
-    match
-      item.parameters
-        |>.getD #[]
-        |>.mapM (fun p => show Except String _ from do
-          let p ← JsonSchema.resolveRefOr json p
-          return p)
-    with
-    | .error e =>
-      logWarning s!"Path {path} parameter resolution failed:\n{e}"
-      continue
-    | .ok itemParams =>
+    let itemParams := item.parameters.getD #[] |>.val
 
     for (method, op) in item.ops do
       let some id := op.operationId.map (mkIdent ∘ Name.mkSimple)
@@ -83,19 +74,15 @@ scoped elab "genOpenAPI!" s:str : command => do
       
       let deprecated := op.deprecated |>.getD false
 
-      match
-        op.parameters
-        |>.getD #[]
-        |>.mapM (fun p => show Except String _ from do
-          let p ← JsonSchema.resolveRefOr json p
-          return p)
-      with
-      | .error e => logWarning s!"Error resolving parameter references for {method} on {path}:\n{e}"
-      | .ok params =>
+      let params := op.parameters.getD #[] |>.val
+
+      let paramBinders : TSyntaxArray ``Lean.Parser.Term.bracketedBinder ←
+        params.mapM (fun p => do
+          return .mk <| ← `(explicitBinderF| ($(mkIdent p.name.val):ident : Lean.Json) ))
 
       elabCommand (← `(
         $(Lean.mkDocComment docstring):docComment
-        def $id := $(quote <| (toJson (itemParams ++ params)).pretty)
+        def $id $paramBinders:bracketedBinder* : Http.Request Unit := sorry
       ))
       
       if deprecated.val then

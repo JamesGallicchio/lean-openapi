@@ -91,6 +91,14 @@ instance : Monad SchemaM := inferInstanceAs (Monad (ExceptT _ _))
 instance : MonadLift (Except String) SchemaM where
   monadLift e := show ExceptT _ _ _ from liftM e
 
+def toType (_s : SchemaM α) : Type := α
+def toType.val {s : SchemaM α} (v : toType s) : α := v
+
+instance {s : SchemaM α} [R : Repr α] : Repr (toType s) := R
+
+instance : CoeSort (SchemaM α) Type where
+  coe s := s.toType
+
 end SchemaM
 
 def any : SchemaM Lean.Json := SchemaM.curJson
@@ -127,153 +135,88 @@ def array (s : SchemaM α) : SchemaM (Array α) := do
 
 /-! Objects -/
 
-structure ObjSchema (α : String → Type) where
-  schemas : (s : String) → SchemaM (α s)
-  required : List String
-
-def ObjSchema.toType (os : ObjSchema α) :=
-  { m : Lean.RBNode String α //
-    ∀ key ∈ os.required, ∃ j, m.findCore compare key = some ⟨key,j⟩ }
-
-
-def ObjSchema.toType.get {os : ObjSchema α} (v : os.toType) (s : String) (h : s ∈ os.required := by decide)
-  : α s :=
-  match h' : v.val.findCore compare s with
-  | some ⟨s',x⟩ =>
-    have : s = s' := by
-      have := v.val.keys_eq_of_findCore_some h'
-      simp [compare, compareOfLessAndEq] at this
-      split at this <;>
-        first | contradiction
-              | split at this <;> first | contradiction | assumption
-    this ▸ x
-  | none => False.elim <| by
-    have ⟨sv,h⟩ := v.property _ h
-    rw [h'] at h
-    contradiction
-
-def ObjSchema.toType.get? {os : ObjSchema α} (v : os.toType) (s : String)
-  : Option (α s) :=
-  v.val.findCore compare s |>.pmap (fun ⟨s',x⟩ h' =>
-    have : s = s' := by
-      have := v.val.keys_eq_of_findCore_some h'
-      simp [compare, compareOfLessAndEq] at this
-      split at this <;>
-        first | contradiction
-              | split at this <;> first | contradiction | assumption
-    this ▸ x
-  ) (fun _ => id)
-
-def objSchema (os : ObjSchema α) : SchemaM os.toType := do
+/-- For a given key, if that key exists, specify the schema
+    that applies to that key -/
+def objectMap {α : String → Type} (f : (s : String) → SchemaM (α s))
+    : SchemaM (Lean.RBNode String α) := do
   let j ← SchemaM.curJson
   match j with
   | .obj m =>
     let r ← SchemaM.curRef
-    let m ← m.mapM (fun key val => SchemaM.withState (r.thenKey key) val (os.schemas key))
-    match h : os.required.find? (m.findCore compare · |>.isNone) with
-    | some s => SchemaM.throw s!"object expected to have key \"{s}\": {j}"
-    | none => return ⟨m, by
-      intro key hk
-      simp [List.find?_eq_none] at h
-      have := h key hk
-      simp [Option.isNone] at this; split at this <;> try contradiction
-      rename_i v h'
-      rcases v with ⟨a,b⟩
-      have := Lean.RBNode.keys_eq_of_findCore_some _ h'
-      simp [compare, compareOfLessAndEq] at this
-      split at this <;> first | contradiction | split at this <;> try contradiction
-      subst_vars
-      exact ⟨_, h'⟩
-      ⟩
-  | _ => SchemaM.throw s!"expected object, got: {j}"
+    m.mapM (fun k j' => SchemaM.withState (r.thenKey k) j' (f k))
+  | _ => SchemaM.throw s!"expected object, got:\n{j}"
 
-open Lean Macro Elab Term in
-scoped macro "{" pairs:( str ":" term ),* "}" : term => do
-  let ss' := pairs.getElems.map (fun s =>
-    let key := s.raw[0].isStrLit?.get!
-    let val : Syntax := s.raw[2]
-    (key, (.mk val : TSyntax `term)))
-  let eα ← `(fun (s : String) => $(
-    ← ss'.foldrM
-      (fun (k,_v) e => `(if s = $(Syntax.mkStrLit k) then _ else $e))
-      (← `(Lean.Json))
-    ))
-  let eschemas ← `(fun (s : String) =>
-    show SchemaM ($eα s) from $(
-    ← ss'.foldrM
-      (fun (k,v) e => `(
-        iteInduction (c := s = $(Syntax.mkStrLit k)) (motive := id) (fun _ => $v) (fun _ => $e)))
-      (← `(any))
-  ))
-  return eschemas
+private def SchemaM.objField (m : Lean.RBNode String fun _ => Lean.Json) (f : String) (s : SchemaM α) : SchemaM α :=
+  do let some next := m.find compare f | SchemaM.throw s!"Required field {f} missing."
+     SchemaM.withState ((← SchemaM.curRef).thenKey f) next s
 
-open Lean Macro Elab Meta Term Command in
-scoped elab "object " name:ident "{" keyStx:( str ":" "required "? term ),* "}" : command => do
-  -- name, required, (Lean) type, schema
-  let keys : Array (String × Bool × TSyntax `term × TSyntax `term) ←
-    liftTermElabM <| keyStx.getElems.mapM (fun s =>
-      -- unsure if this is actually necessary
-      -- but we use the mvar identifier `type` so /shrug
-      withFreshMacroScope do
-      let key := s.raw[0].isStrLit?.get!
-      let isReq := s.raw[2].hasArgs
-      let val : Term := .mk s.raw[3]
-      -- make a new metavariable for the type
-      let type : Expr ← mkFreshTypeMVar
-      let schema ← elabTermEnsuringType val (some (.app (.const ``SchemaM []) type))
-      let typeStx ← PrettyPrinter.delab (← instantiateMVars type)
-      let schemaStx ← PrettyPrinter.delab (← instantiateMVars schema)
-      return (key, isReq, typeStx, schemaStx)
-    )
-  let typeId := mkIdent (name.getId ++ "type")
-  let fields : TSyntaxArray _ ← keys.mapM (fun (name, req, type, _schema) => do
-    `(Lean.Parser.Command.structExplicitBinder|
-      -- if not required, wrap the type in Option
-      ($(mkIdent name) : $(if req then type else ← `(Option $type)))
-    )
+private def SchemaM.objFieldOpt (m : Lean.RBNode String fun _ => Lean.Json) (f : String) (s : SchemaM α)
+  : SchemaM (Option α) :=
+  match m.find compare f with
+  | none => pure none
+  | some next => do
+    let res ← SchemaM.withState ((← SchemaM.curRef).thenKey f) next s
+    return some res
+
+open Lean Elab Deriving Command Lean.Parser.Term Meta in
+section
+
+private def withBindersType (b : Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) (e : Term) : TermElabM Term :=
+  if b.isEmpty then pure e else `(∀ $b:bracketedBinder* , e)
+
+private def withBindersFun (b : Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) (e : Term) : TermElabM Term :=
+  if b.isEmpty then pure e else `(fun $(b.map (.mk ·.raw)):funBinder* => e)
+
+scoped elab "genStructSchema " defnId:ident "for " struct:ident : command =>
+  liftTermElabM do
+  let defnId := defnId.getId
+  let declName ← resolveGlobalConstNoOverload struct
+  let ctx ← mkContext "jsonSchema" declName
+  Term.withDeclName defnId <| do
+  let header ← mkHeader ``SchemaM 0 ctx.typeInfos[0]!
+  let fields := getStructureFieldsFlattened (← getEnv) declName (includeSubobjectFields := false)
+  let fieldIdents := fields.map mkIdent
+  let mIdent : Ident ← `(m)
+  let getters : TSyntaxArray `doElem ← fields.mapM (fun field => do
+    let some projFn := getProjFnForField? (← getEnv) (structName := declName) (fieldName := field)
+      | throwError "field has no projection function? (bug)"
+    let projType ← inferType (← Term.elabTerm (← `($(mkIdent projFn))) none)
+    let type := projType.getForallBody
+    let (type, optional) :=
+      match type.app1? ``Option with
+      | some type => (type, true)
+      | none => (type, false) 
+    let some (_type, schema) := type.app2? ``SchemaM.toType
+      | throwError "Field {field} has a type which is not derived from a schema:\n{type}
+This deriver only works if all fields have a type of the form `SchemaM.toType <schema>`"
+
+    if optional then
+      `(doElem| SchemaM.objFieldOpt m $(Syntax.mkStrLit field.toString) $(← schema.toSyntax) )
+    else
+      `(doElem| SchemaM.objField m $(Syntax.mkStrLit field.toString) $(← schema.toSyntax))
   )
-  let objId : Ident := mkIdent `obj
-  let fieldSchemas : TSyntaxArray _ ← keys.mapM (fun (name, req, _type, schema) => do
-    `(Lean.Parser.Term.doSeqItem|
-      let $(mkIdent name) ← $(
-        if req then ← `(sorry)
-        else ← `(Lean.RBNode.find compare $objId $(Syntax.mkStrLit name) |>.mapM $schema)
-      ):term
+  let type := ← instantiateMVars <| ← Term.elabTerm (expectedType? := none) <|
+    ← withBindersType header.binders <| ← `(
+      SchemaM $(← mkInductiveApp ctx.typeInfos[0]! header.argNames)
     )
-  )
-  let structInstFields : TSyntaxArray _ ←
-    keys.mapM (fun (name, _req, _type, _schema) =>
-      `(Lean.Parser.Term.structInstFieldAbbrev| $(mkIdent name):ident )
-    )
-  
-  elabCommand <| ← `(
-    structure $(typeId) where
-      $fields:structExplicitBinder*
-  )
-  let stx : TSyntax `command ← `(
-    def $(name) : SchemaM $(typeId) := do
-      let $objId ← do
-        let j ← SchemaM.curJson
-        match j with
-        | .obj m => pure m
-        | _ => SchemaM.throw s!"expected {$(Syntax.mkStrLit name.getId.toString)}, got:\n{j}"
-      $fieldSchemas:doSeqItem*
-      return { $structInstFields:structInstFieldAbbrev,* }
-  )
-  IO.println (stx.raw.prettyPrint)
-  elabCommand stx
+  let value := ← instantiateMVars <| ← Term.elabTerm (expectedType? := some type) <|
+    ← withBindersFun header.binders <| ← `(do
+    let j ← SchemaM.curJson
+    match j with
+    | .obj $mIdent =>
+      $[let $fieldIdents:ident ← $getters]*
+      return { $[$fieldIdents:ident := $(id fieldIdents)],* }
+    | _ => SchemaM.throw s!"Expected object ({$(Syntax.mkStrLit declName.toString)}), got:\n{j}")
+  addAndCompile (.defnDecl {
+    name := defnId
+    levelParams := []
+    type := type
+    hints := default
+    safety := .safe
+    value := value
+  })
 
-set_option pp.rawOnError true
-object Hi {
-  "hi" : string
-}
-
-#eval Hi.run (.obj <| .insert compare .leaf "hi" (.str "ho")) |>.map (Hi.type.hi )
-
-/-- For a given key, if that key exists, specify the schema
-    that applies to that key -/
-def objectMap {α : String → Type} (f : (s : String) → SchemaM (α s))
-  := objSchema ⟨f, []⟩
+end
 
 /-! Subtypes (arbitrary properties on top of a given schema) -/
 
@@ -304,6 +247,36 @@ def orElse (s1 : SchemaM α) (s2 : SchemaM β) : SchemaM (α ⊕ β) :=
       | .error e2 =>
         .error s!"multiple failures:\n{e1}\n\n{e2}"
 
+/-! References -/
+
+def reference : SchemaM Reference := do
+  let s ← string
+  match Reference.fromString s with
+  | .ok r => return r
+  | .error e =>
+    SchemaM.throw s!"reference: failed to parse reference string {s}:\n{e}"
+
+def maybeRefObj (s : SchemaM α) : SchemaM α := do
+  match ← SchemaM.curJson with
+  | .obj m =>
+    match m.find compare "$ref" with
+    | none => return ← s
+    | some j =>
+      if m.size > 1 then
+        SchemaM.throw s!"refobj: found $ref key, but it has siblings:\n{← SchemaM.curJson}"
+
+      match j with
+      | .str refstr =>
+        match Reference.fromString refstr with
+        | .error e => SchemaM.throw s!"refobj: found $ref key but failed to parse reference string.\nRefString: {refstr}\nError: {e}"
+        | .ok (.pointer p) =>
+          match Reference.resolvePointer (← SchemaM.topJson) p with
+          | .error e => SchemaM.throw s!"refobj: failed to follow reference path:\n{e}"
+          | .ok j =>
+          SchemaM.withState (.pointer p) j s
+      | _ => s
+  | _ => s
+
 /-! SchemaM for core schemas
 
 INCOMPLETE. DO NOT USE.
@@ -312,25 +285,26 @@ INCOMPLETE. DO NOT USE.
 namespace CoreSchema
 
 inductive «Type»
-| integer | number | boolean | string | array | object
+| protected integer | protected number | protected boolean | protected string
+| protected array | protected object
 deriving DecidableEq, Lean.ToJson, Lean.FromJson
 
 def Type.toType : «Type» → Type
-| .integer => Int
-| .number => Lean.JsonNumber
-| .boolean => Bool
-| .string => String
-| .array => Array Lean.Json
-| .object => ObjSchema.toType ⟨fun _ => any, []⟩
+| .integer => integer
+| .number  => number
+| .boolean => boolean
+| .string  => string
+| .array   => array any
+| .object  => objectMap fun _ => any
 
 def Type.toJsonSchema (c : «Type») : SchemaM c.toType :=
   match c with
-  | .integer => JsonSchema.integer
-  | .number  => JsonSchema.number
-  | .boolean => JsonSchema.boolean
-  | .string  => JsonSchema.string
-  | .array   => JsonSchema.array any
-  | .object  => JsonSchema.objectMap fun _ => any
+  | .integer => integer
+  | .number  => number
+  | .boolean => boolean
+  | .string  => string
+  | .array   => array any
+  | .object  => objectMap fun _ => any
 
 def type : SchemaM «Type» := JsonSchema.ofLeanJson
 
