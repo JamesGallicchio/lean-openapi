@@ -346,31 +346,6 @@ where fallback (j) := do return {
   default := none
 }
 
-/-
-partial def fromJson? (j : Lean.Json) : Except String Res := do
-  let title       := Except.toOption <| j.getObjVal? "title"
-  let description := Except.toOption <| j.getObjVal? "description"
-  let nullable    := Except.toOption <| j.getObjVal? "nullable"
-  let default     := Except.toOption <| j.getObjVal? "default"
-  -- types
-  let type        := Except.toOption <| j.getObjValAs? «Type» "type"
-  let format      := Except.toOption <| j.getObjVal? "format"
-  let enum        := Except.toOption <| j.getObjVal? "enum"
-  -- int
-  let minimum     := Except.toOption <| j.getObjVal? "minimum"
-  let maximum     := Except.toOption <| j.getObjVal? "maximum"
-  -- object
-  let properties  := Except.toOption <| j.getObjVal? "properties"
-  let required    := Except.toOption <| j.getObjVal? "required"
-  -- array
-  let items       := Except.toOption <| j.getObjVal? "items" |>.map fromJson?
-  -- combinators
-  let allOf       := Except.toOption <| j.getObjVal? "allOf"
-  let oneOf       := Except.toOption <| j.getObjVal? "oneOf"
-
-  return sorry
--/
-
 end CoreSchema
 
 def coreSchema : SchemaM (Lean.Elab.TermElabM CoreSchema.Res) := do

@@ -47,45 +47,51 @@ def genDocstring (params : Array (Parameter × JsonSchema.CoreSchema.Res)) : Str
   |> String.intercalate "\n\n"
 
 /-- Handle path parameters -/
-def genPathHandler (params : Array Parameter) (urlId : Ident) : TermElabM (TSyntax `doElem) := do
-  let pathParams   := params.filter (·.in.val = .path)
-  let pathParamStrLits  : Array StrLit := pathParams.map (Syntax.mkStrLit ·.name.val)
-  let pathParamNames    : Array Ident := pathParams.map (mkIdent ·.name.val)
+def genPathHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (urlId : Ident)
+    : TermElabM (TSyntax `doElem) := do
+  let pathParams   := paramSchemas.filter (·.1.in.val = .path)
+  let pathParamStrLits : Array StrLit := pathParams.map (Syntax.mkStrLit ·.1.name.val)
+  let pathParamNames   : Array Ident := pathParams.map (mkIdent ·.1.name.val)
+  let pathParamToString: Array Term := pathParams.map (·.2.toString)
   `(doElem|
     let $urlId := ($urlId).appendPath <|
         PathTemplate.subst $(quote path) (fun s _h =>
           match s with
-          $[| $pathParamStrLits:term => $pathParamNames:term]*
+          $[| $pathParamStrLits:term => $pathParamToString:term $pathParamNames:term]*
           | _ => default)
   )
 
 /-- Handle query parameters -/
-def genQueryHandler (params : Array Parameter) (urlId : Ident) : TermElabM (TSyntax `doElem) := do
-  let queryParams  := params.filter (·.in.val = .query)
-  let queryParamStrLits : Array StrLit := queryParams.map (Syntax.mkStrLit ·.name.val)
-  let queryParamNames   : Array Ident := queryParams.map (mkIdent ·.name.val)
+def genQueryHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (urlId : Ident)
+    : TermElabM (TSyntax `doElem) := do
+  let queryParams  := paramSchemas.filter (·.1.in.val = .query)
+  let queryParamStrLits : Array StrLit := queryParams.map (Syntax.mkStrLit ·.1.name.val)
+  let queryParamNames   : Array Ident := queryParams.map (mkIdent ·.1.name.val)
+  let queryParamToString: Array Term := queryParams.map (·.2.toString)
   `(doElem|
     let $urlId := ($urlId).withQuery <| String.intercalate "&" [
-        $[$queryParamStrLits ++ "=" ++ $queryParamNames],*
+        $[$queryParamStrLits ++ "=" ++ $queryParamToString $queryParamNames],*
     ]
   )
 
 /-- Handle header parameters -/
-def genHeaderHandler (params : Array Parameter) (headerId : Ident) : TermElabM (TSyntaxArray `doElem) := do
-  let headerParams := params.filter (·.in.val = .header)
-  let headerParamStrLits : Array StrLit := headerParams.map (Syntax.mkStrLit ·.name.val)
-  let headerParamNames   : Array Ident := headerParams.map (mkIdent ·.name.val)
-  return ← (headerParamStrLits.zip headerParamNames).mapM (fun (strLit, name) =>
-    `(doElem| let $headerId := ($headerId).add $strLit $name)
+def genHeaderHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (headerId : Ident)
+    : TermElabM (TSyntaxArray `doElem) := do
+  let headerParams := paramSchemas.filter (·.1.in.val = .header)
+  return ← headerParams.mapM (fun (p,r) => `(doElem|
+    let $headerId := ($headerId).add $(Syntax.mkStrLit p.name.val) <|
+      $(r.toString) $(mkIdent p.name.val))
   )
 
 /-- Handle cookie parameters -/
-def genCookieHandler (params : Array Parameter) (headerId : Ident) : TermElabM (TSyntaxArray `doElem) := do
-  let cookieParams := params.filter (·.in.val = .cookie)
-  let cookieParamStrLits : Array StrLit := cookieParams.map (Syntax.mkStrLit ·.name.val)
-  let cookieParamNames   : Array Ident := cookieParams.map (mkIdent ·.name.val)
-  return ← (cookieParamStrLits.zip cookieParamNames).mapM (fun (strLit, name) =>
-    `(doElem| let $headerId := ($headerId).add $strLit $name)
+def genCookieHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (headerId : Ident)
+    : TermElabM (TSyntaxArray `doElem) := do
+  let cookieParams := paramSchemas.filter (·.1.in.val = .cookie)
+  return ← cookieParams.mapM (fun (p, r) =>
+    let strLit := Syntax.mkStrLit p.name.val
+    let name := mkIdent p.name.val
+    let toString := r.toString
+    `(doElem| let $headerId := ($headerId).add $strLit ($toString $name))
   )
 
 /-- generate endpoint for the given arguments, returning the command to be elaborated -/
@@ -108,23 +114,20 @@ def genEndpoint : TermElabM (TSyntax `command) := do
   let docstring := genDocstring item op paramSchemas
 
   let paramNames := paramSchemas.map (mkIdent ·.1.name.val)
-  let paramToStrings := paramSchemas.map (·.2.toString)
   let paramTypes := paramSchemas.map (·.2.type)
   
   let urlId := mkIdent `url
-  let pathHandler ← genPathHandler path params urlId
-  let queryHandler ← genQueryHandler params urlId
+  let pathHandler ← genPathHandler path paramSchemas urlId
+  let queryHandler ← genQueryHandler paramSchemas urlId
 
   let headerId := mkIdent `header
-  let headerHandler ← genHeaderHandler params headerId
-  let cookieHandler ← genCookieHandler params headerId
+  let headerHandler ← genHeaderHandler paramSchemas headerId
+  let cookieHandler ← genCookieHandler paramSchemas headerId
 
   let mainCmd ← `(
     $(Lean.mkDocComment docstring):docComment
     def $id:ident $[ ($paramNames:ident : $paramTypes:term) ]* : Http.Request Unit :=
       Id.run do
-      -- serialize all parameters as strings
-      $[let $paramNames:ident := $paramToStrings:term $(_root_.id paramNames):ident]*
       -- put parameters into the url
       let $urlId := $serverUrlId
       $pathHandler:doElem
