@@ -220,7 +220,7 @@ end
 
 /-! Subtypes (arbitrary properties on top of a given schema) -/
 
-def withProperty (s : SchemaM α) (errString : α → String) (p : α → Bool)
+def SchemaM.withProperty (s : SchemaM α) (errString : α → String) (p : α → Bool)
       : SchemaM { a : α // p a } := do
   let a ← s
   if h : p a then
@@ -237,7 +237,7 @@ def guard {β : α → Type} (f : SchemaM α) (g : (a : α) → SchemaM (β a))
 
 /-! Either -/
 
-def orElse (s1 : SchemaM α) (s2 : SchemaM β) : SchemaM (α ⊕ β) :=
+def SchemaM.orElse (s1 : SchemaM α) (s2 : SchemaM β) : SchemaM (α ⊕ β) :=
   fun top r j =>
     match s1 top r j with
     | .ok a => .ok (.inl a)
@@ -308,19 +308,46 @@ def Type.toJsonSchema (c : «Type») : SchemaM c.toType :=
 
 def type : SchemaM «Type» := JsonSchema.ofLeanJson
 
-/- TODO: schema schemas should be specified via structures,
+/- TODO: schema schemas should be specified via recursive structures,
 but Lean structures currently don't have good enough support
 for nested inductives for this to not be hugely painful. -/
 
 structure Res where
-  name : Lean.Ident
-  descr : Option String
-  type : Lean.Expr
-  schema : Lean.Expr
-  toJson : Lean.Expr
-  default : Option Lean.Expr
+  docs : Option String
+  type : Lean.Syntax.Term
+  toString : Lean.Syntax.Term
+  default : Option Lean.Syntax.Term
 
-def fromJson? (j : Lean.Json) : Except String Res := do
+def fromJson? (j : Lean.Json) : Lean.Elab.TermElabM Res := do
+  match j.getObj? with
+  | .error _ => fallback j
+  | .ok m =>
+  match m.find compare "type" with
+  | none => fallback j
+  | some type =>
+  match Lean.FromJson.fromJson? (α := «Type») type with
+  | .error _ => fallback j
+  | .ok ty =>
+  let analyze : Option (Lean.Term × Lean.Term) ←
+    (match ty with
+      | .integer  => do return some ( ← `(Int)            , ← `(toString) )
+      | .number   => do return some ( ← `(Lean.JsonNumber), ← `(toString) )
+      | .string   => do return some ( ← `(String)         , ← `(toString) )
+      | .boolean  => do return some ( ← `(Bool)           , ← `(toString) )
+      | .array | .object => pure none)
+  let some (type, toString) := analyze
+    | return ← fallback j
+  let docs := some j.toYaml
+  return { docs, type, toString, default }
+where fallback (j) := do return {
+  docs := some (j.toYaml)
+  type := ← `(String)
+  toString := ← `(id)
+  default := none
+}
+
+/-
+partial def fromJson? (j : Lean.Json) : Except String Res := do
   let title       := Except.toOption <| j.getObjVal? "title"
   let description := Except.toOption <| j.getObjVal? "description"
   let nullable    := Except.toOption <| j.getObjVal? "nullable"
@@ -336,12 +363,16 @@ def fromJson? (j : Lean.Json) : Except String Res := do
   let properties  := Except.toOption <| j.getObjVal? "properties"
   let required    := Except.toOption <| j.getObjVal? "required"
   -- array
-  let items       := Except.toOption <| j.getObjVal? "items"
+  let items       := Except.toOption <| j.getObjVal? "items" |>.map fromJson?
   -- combinators
   let allOf       := Except.toOption <| j.getObjVal? "allOf"
   let oneOf       := Except.toOption <| j.getObjVal? "oneOf"
 
-  
   return sorry
+-/
 
 end CoreSchema
+
+def coreSchema : SchemaM (Lean.Elab.TermElabM CoreSchema.Res) := do
+  let j ← any
+  return CoreSchema.fromJson? j

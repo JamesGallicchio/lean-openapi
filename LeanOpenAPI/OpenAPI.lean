@@ -26,19 +26,31 @@ namespace OpenAPI
 
 structure PathTemplate where
   params : List String
-  subst : (∀ s, s ∈ params → String) → String
+  subst : (∀ s, s ∈ params → String) → Http.URI.Path
+  raw : String
+
+def PathTemplate.ofParams (raw : String) (params : List String) : PathTemplate :=
+  { raw, params
+    subst := fun f =>
+      Array.mk <|
+      List.tail <|
+      String.splitOn (sep := "/") <|
+      params.attach.foldl (fun s ⟨v,h⟩ =>
+        s.replace (pattern := s!"\{{v}}") (replacement := f v h)
+      ) raw }
+
+instance : Lean.Quote PathTemplate where
+  quote pt := Syntax.mkApp (Lean.mkCIdent ``PathTemplate.ofParams) #[
+    quote pt.raw,
+    quote pt.params
+  ]
 
 def pathTemplate (s : String) : Except String PathTemplate := do
   if !s.startsWith "/" then
     throw "Expected path template to start with /"
   
   let params ← findVars 0 []
-  return {
-    params
-    subst := fun f => params.attach.foldl (fun s ⟨v,h⟩ =>
-        s.replace (pattern := s!"\{{v}}") (replacement := f v h)
-      ) s
-  }
+  return .ofParams s params
 where findVars (start : String.Pos) (acc : List String) : Except String (List String) := do
   if _hs : start < s.endPos then
     let leftBracIdx := String.posOfAux s '{' s.endPos start
@@ -118,11 +130,19 @@ structure ExternalDocs where
 
 genStructSchema externalDocs for ExternalDocs
 
+structure MediaType where
+  schema : Option coreSchema
+  «example» : Option any
+  examples : Option any
+  encoding : Option any
+
+genStructSchema mediaType for MediaType
+
 section Parameter
 
 inductive Parameter.In
 | query | header | path | cookie
-deriving ToJson, FromJson, Repr, Inhabited
+deriving ToJson, FromJson, Repr, DecidableEq, Inhabited
 
 def parameter.in : SchemaM Parameter.In := JsonSchema.ofLeanJson
 
@@ -136,23 +156,15 @@ structure Parameter where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option any
+  schema : Option coreSchema
   «example» : Option any
   examples : Option (objectMap fun _ => any)
+  content : Option ((objectMap fun _ => mediaType)
+    |>.withProperty (s!"content map does not contain exactly one entry: {·.toArray.map (·.1)}") (·.size = 1))
 
 genStructSchema parameter for Parameter
 
 end Parameter
-
-section RequestBody
-
-structure MediaType where
-  schema : Option any
-  «example» : Option any
-  examples : Option any
-  encoding : Option any
-
-genStructSchema mediaType for MediaType
 
 structure RequestBody where
   description : Option string
@@ -160,8 +172,6 @@ structure RequestBody where
   required : Option boolean
 
 genStructSchema requestBody for RequestBody
-
-end RequestBody
 
 section Responses
 
@@ -173,7 +183,7 @@ structure Header where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option any
+  schema : Option coreSchema
   «example» : Option any
   examples : Option (objectMap fun _ => any)
 
@@ -202,6 +212,28 @@ def Responses.get (r : Responses) (code : Http.StatusCode) : Option Response :=
 
 end Responses
 
+inductive SecurityScheme.Type
+| apiKey | http | mutualTLS | oauth2 | openIdConnect
+deriving Lean.FromJson
+
+def securityScheme.type : SchemaM SecurityScheme.Type := JsonSchema.ofLeanJson
+
+structure SecurityScheme where
+  type : securityScheme.type
+  description : Option string
+  name : Option string
+  «in» : Option parameter.in
+  scheme : Option string
+  bearerFormat : Option string
+  /-- currently unsupported -/
+  flows : Option any
+  openIdConnectUrl : Option string
+
+genStructSchema securityScheme for SecurityScheme
+
+def SecurityRequirement : Type := objectMap fun _ => array string
+def securityRequirement : SchemaM SecurityRequirement := objectMap fun _ => array string
+
 section Paths
 
 structure Operation where
@@ -213,9 +245,9 @@ structure Operation where
   parameters  : Option <| array (maybeRefObj parameter)
   requestBody : Option <| maybeRefObj requestBody
   responses   : Option <| responses
-  --callbacks   : Option <| objectMap (fun _ => maybeRefObj callback)
+  callbacks   : Option <| objectMap (fun _ => maybeRefObj any)
   deprecated  : Option <| boolean
-  --security    : Option <| Array securityRequirement
+  security    : Option <| array securityRequirement
   servers     : Option <| array server
 
 genStructSchema operation for Operation
@@ -254,27 +286,31 @@ def paths : SchemaM Paths := objectMap fun path => guard (pathTemplate path) (fu
 
 end Paths
 
+def callback := objectMap fun _ => maybeRefObj pathItem
+
 structure Components where
-  --schemas         : Option <| objectMap (fun _ => reference.orElse schema)
+  schemas         : Option <| objectMap (fun _ => maybeRefObj coreSchema)
   responses       : Option <| objectMap (fun _ => maybeRefObj response)
   parameters      : Option <| objectMap (fun _ => maybeRefObj parameter)
-  --examples        : Option <| objectMap (fun _ => reference.orElse example)
+  --examples        : Option <| objectMap (fun _ => maybeRefObj example)
   requestBodies   : Option <| objectMap (fun _ => maybeRefObj requestBody)
-  --headers         : Option <| objectMap (fun _ => reference.orElse header)
-  --securitySchemes : Option <| objectMap (fun _ => reference.orElse securityScheme)
-  --links           : Option <| objectMap (fun _ => reference.orElse link)
-  --callbacks       : Option <| objectMap (fun _ => reference.orElse callback)
+  headers         : Option <| objectMap (fun _ => maybeRefObj header)
+  securitySchemes : Option <| objectMap (fun _ => maybeRefObj securityScheme)
+  --links           : Option <| objectMap (fun _ => maybeRefObj link)
+  callbacks       : Option <| objectMap (fun _ => maybeRefObj callback)
 
 genStructSchema components for Components
 
 structure OpenAPI where
   openapi : string
   info    : info
+  jsonSchemaDialect : Option string
   servers     : Option <| array server
   paths       : paths
+  webhooks    : Option (objectMap fun _ => maybeRefObj pathItem)
   components  : Option components
-  --security    : Option <| Array SecurityRequirement
-  --tags        : Option <| Array Tag
+  security    : Option <| array securityRequirement
+  --tags        : Option <| array tag
   externalDocs : Option externalDocs
 
 genStructSchema openAPI for OpenAPI

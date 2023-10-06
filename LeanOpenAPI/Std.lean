@@ -130,3 +130,13 @@ def Lean.Json.reprPrec (j : Lean.Json) (prec : Nat) : Format :=
 termination_by _ j _ => sizeOf j
 
 instance : Repr Lean.Json := ⟨Lean.Json.reprPrec⟩
+
+partial def Lean.Json.toYaml (indent : String := "") : Lean.Json → String
+| .str s  => quote? s
+| .num n  => toString n
+| .bool b => toString b
+| .null   => "null"
+| .arr js => js.foldl (· ++ "\n" ++ indent ++ "- " ++ toYaml (indent := indent ++ "  ") ·) ""
+| .obj m  => m.fold (· ++ "\n" ++ indent ++ quote? · ++ ": " ++ toYaml (indent := indent ++ "  ") ·) ""
+where quote? (s : String) : String :=
+  if s.all (·.isAlphanum) then s else s.quote
