@@ -38,7 +38,10 @@ def genDocstring (params : Array (Parameter × JsonSchema.CoreSchema.Res)) : Str
   , some (
       params.foldl (init := "#### Parameters") (fun s (param, schema) =>
       s ++ "\n\n" ++ String.intercalate "\n" ([
-        some s!"##### {param.name.val}",
+        some s!"##### {param.name.val}{
+          if (param.required.isEqSome (α := Bool) true)
+          then ""
+          else " (optional)"}",
         param.description,
         schema.docs.map (s!"```yaml{·}\n```")
         ].filterMap _root_.id)
@@ -50,12 +53,16 @@ def genDocstring (params : Array (Parameter × JsonSchema.CoreSchema.Res)) : Str
 def genPathHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (urlId : Ident)
     : TermElabM (TSyntax `doElem) := do
   let pathParams   := paramSchemas.filter (·.1.in.val = .path)
+  for (p,_) in pathParams do
+    if !(p.required.isEqSome (α := Bool) true) then
+      throwError "Parameter {p.name.val} is path parameter, but is not required"
+  
   let pathParamStrLits : Array StrLit := pathParams.map (Syntax.mkStrLit ·.1.name.val)
   let pathParamNames   : Array Ident := pathParams.map (mkIdent ·.1.name.val)
   let pathParamToString: Array Term := pathParams.map (·.2.toString)
   `(doElem|
     let $urlId := ($urlId).appendPath <|
-        PathTemplate.subst $(quote path) (fun s _h =>
+      LeanOpenAPI.OpenAPI.PathTemplate.subst ($(quote path)) (fun s _h =>
           match s with
           $[| $pathParamStrLits:term => $pathParamToString:term $pathParamNames:term]*
           | _ => default)
@@ -64,34 +71,48 @@ def genPathHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res
 /-- Handle query parameters -/
 def genQueryHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (urlId : Ident)
     : TermElabM (TSyntax `doElem) := do
-  let queryParams  := paramSchemas.filter (·.1.in.val = .query)
-  let queryParamStrLits : Array StrLit := queryParams.map (Syntax.mkStrLit ·.1.name.val)
-  let queryParamNames   : Array Ident := queryParams.map (mkIdent ·.1.name.val)
-  let queryParamToString: Array Term := queryParams.map (·.2.toString)
+  let queryStrOpts ← paramSchemas.filter (·.1.in.val = .query)
+    |>.mapM (fun (p,s) =>
+      let strLit := Syntax.mkStrLit p.name.val
+      let ident := mkIdent p.name.val
+      if p.required.isEqSome (α := Bool) true then
+        `(some <| $strLit ++ "=" ++ $s.toString $ident)
+      else
+        `(($ident).map ($strLit ++ "=" ++ $s.toString ·))
+      )
   `(doElem|
-    let $urlId := ($urlId).withQuery <| String.intercalate "&" [
-        $[$queryParamStrLits ++ "=" ++ $queryParamToString $queryParamNames],*
-    ]
+    let $urlId := ($urlId).withQuery <| String.intercalate "&" (
+      List.filterMap id [
+        $[$queryStrOpts],*
+      ])
   )
 
 /-- Handle header parameters -/
 def genHeaderHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (headerId : Ident)
     : TermElabM (TSyntaxArray `doElem) := do
   let headerParams := paramSchemas.filter (·.1.in.val = .header)
-  return ← headerParams.mapM (fun (p,r) => `(doElem|
-    let $headerId := ($headerId).add $(Syntax.mkStrLit p.name.val) <|
-      $(r.toString) $(mkIdent p.name.val))
+  return ← headerParams.mapM (fun (p,r) => do
+    let strLit := Syntax.mkStrLit p.name.val
+    let ident := mkIdent p.name.val
+    let toString :=
+      if p.required.isEqSome (α := Bool) true
+      then r.toString
+      else ← `(Option.map $r.toString)
+    `(doElem| let $headerId := ($headerId).add $strLit ($toString $ident))
   )
 
 /-- Handle cookie parameters -/
 def genCookieHandler (paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res)) (headerId : Ident)
     : TermElabM (TSyntaxArray `doElem) := do
   let cookieParams := paramSchemas.filter (·.1.in.val = .cookie)
-  return ← cookieParams.mapM (fun (p, r) =>
+  return ← cookieParams.mapM (fun (p,r) => do
     let strLit := Syntax.mkStrLit p.name.val
-    let name := mkIdent p.name.val
-    let toString := r.toString
-    `(doElem| let $headerId := ($headerId).add $strLit ($toString $name))
+    let ident := mkIdent p.name.val
+    let toString :=
+      if p.required.isEqSome (α := Bool) true
+      then r.toString
+      else ← `(Option.map $r.toString)
+    `(doElem| let $headerId := ($headerId).add $strLit ($toString $ident))
   )
 
 /-- generate endpoint for the given arguments, returning the command to be elaborated -/
@@ -103,18 +124,27 @@ def genEndpoint : TermElabM (TSyntax `command) := do
 
   let params := Array.flatten #[op.parameters.getD #[], item.parameters.getD #[]]
 
-  let paramSchemas ←
+  let paramSchemas : Array (Parameter × JsonSchema.CoreSchema.Res) ←
     params.mapM (fun p => do
       match p.schema, p.content with
       | none, none     => throwError "{method} on {path.raw} has parameter {p.name.val} with no schema or content"
       | some _, some _ => throwError "{method} on {path.raw} has parameter {p.name.val} with both schema and content"
       | none, some _   => throwError "{method} on {path.raw} parameter {p.name.val} has content type (not yet supported)"
-      | some s, none => return (p, ← s.val))
+      | some s, none =>
+      let s ← s.val
+      return (p, s)
+    )
 
   let docstring := genDocstring item op paramSchemas
 
-  let paramNames := paramSchemas.map (mkIdent ·.1.name.val)
-  let paramTypes := paramSchemas.map (·.2.type)
+  let _ := Lean.Parser.Term.bracketedBinderF
+
+  let paramBinders : Array (TSyntax `Lean.Parser.Term.bracketedBinderF) ← paramSchemas.mapM (fun (p,s) =>
+      if p.required.isEqSome true (α := Bool) then
+        `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p.name.val):ident : $(s.type):term) )
+      else
+        `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p.name.val):ident : Option $(s.type):term := none) )
+    )
   
   let urlId := mkIdent `url
   let pathHandler ← genPathHandler path paramSchemas urlId
@@ -126,7 +156,7 @@ def genEndpoint : TermElabM (TSyntax `command) := do
 
   let mainCmd ← `(
     $(Lean.mkDocComment docstring):docComment
-    def $id:ident $[ ($paramNames:ident : $paramTypes:term) ]* : Http.Request Unit :=
+    def $id:ident $[ $paramBinders ]* : Http.Request Unit :=
       Id.run do
       -- put parameters into the url
       let $urlId := $serverUrlId
@@ -143,6 +173,7 @@ def genEndpoint : TermElabM (TSyntax `command) := do
         (headers := $headerId)
         (body := ())
   )
+
   if deprecated.val then
     return ← `($mainCmd:command attribute [deprecated] $id)
   else return mainCmd
