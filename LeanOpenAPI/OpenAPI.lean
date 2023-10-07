@@ -140,7 +140,7 @@ structure MediaType where
   «example» : Option any
   examples : Option any
   encoding : Option any
-deriving Inhabited
+deriving Inhabited, Repr
 
 genStructSchema mediaType for MediaType
 

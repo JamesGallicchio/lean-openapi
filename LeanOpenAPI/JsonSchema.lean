@@ -99,6 +99,8 @@ instance {s : SchemaM α} [R : Repr α] : Repr (toType s) := R
 instance : CoeSort (SchemaM α) Type where
   coe s := s.toType
 
+instance [I : Inhabited α] {s : SchemaM α} : Inhabited (toType s) := I
+
 end SchemaM
 
 def any : SchemaM Lean.Json := SchemaM.curJson
@@ -308,17 +310,26 @@ def Type.toJsonSchema (c : «Type») : SchemaM c.toType :=
 
 def type : SchemaM «Type» := JsonSchema.ofLeanJson
 
+end CoreSchema
+
 /- TODO: schema schemas should be specified via recursive structures,
 but Lean structures currently don't have good enough support
 for nested inductives for this to not be hugely painful. -/
+
+def CoreSchema := Lean.Json
+deriving Inhabited, Repr
+
+namespace CoreSchema
 
 structure Res where
   docs : Option String
   type : Lean.Syntax.Term
   toString : Lean.Syntax.Term
   default : Option Lean.Syntax.Term
+deriving Inhabited, Repr
 
-def fromJson? (j : Lean.Json) : Lean.Elab.TermElabM Res := do
+def toRes (s : CoreSchema) : Lean.Elab.TermElabM Res := do
+  let j : Lean.Json := s
   match j.getObj? with
   | .error _ => fallback j
   | .ok m =>
@@ -334,7 +345,9 @@ def fromJson? (j : Lean.Json) : Lean.Elab.TermElabM Res := do
       | .number   => do return some ( ← `(Lean.JsonNumber), ← `(toString) )
       | .string   => do return some ( ← `(String)         , ← `(toString) )
       | .boolean  => do return some ( ← `(Bool)           , ← `(toString) )
-      | .array | .object => pure none)
+      | .object   => do return some ( ← `(Lean.Json)      , ← `(Lean.Json.pretty))
+      | .array    => pure none
+    )
   let some (type, toString) := analyze
     | return ← fallback j
   let docs := some j.toYaml
@@ -348,6 +361,4 @@ where fallback (j) := do return {
 
 end CoreSchema
 
-def coreSchema : SchemaM (Lean.Elab.TermElabM CoreSchema.Res) := do
-  let j ← any
-  return CoreSchema.fromJson? j
+def coreSchema : SchemaM CoreSchema := any
