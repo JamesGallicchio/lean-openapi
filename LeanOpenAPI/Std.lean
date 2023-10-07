@@ -99,6 +99,8 @@ theorem mem_of_findCore (m : Lean.RBNode α β) (h : m.findCore cmp a = some ⟨
     · simp at h; cases h
       apply Mem.here
 
+instance : Inhabited (RBNode α β) := ⟨.leaf⟩
+
 end Lean.RBNode
 
 instance [Inhabited α] [Inhabited β] : Inhabited ((_ : α) × β) where

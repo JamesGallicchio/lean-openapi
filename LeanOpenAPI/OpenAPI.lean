@@ -84,13 +84,14 @@ structure Contact where
   name  : Option string
   url   : Option string
   email : Option string
-deriving Inhabited
+deriving Inhabited, Repr
 
 genStructSchema contact for Contact
 
 structure License where
   name : string
   url  : Option string
+deriving Inhabited, Repr
 
 genStructSchema license for License
 
@@ -101,6 +102,7 @@ structure Info where
   termsOfService  : Option string
   contact         : Option contact
   license         : Option license
+deriving Inhabited, Repr
 
 genStructSchema info for Info
 
@@ -112,6 +114,7 @@ structure ServerVariable where
   default : string
   enum        : Option <| array string
   description : Option <| string
+deriving Inhabited, Repr
 
 genStructSchema serverVariable for ServerVariable
 
@@ -119,6 +122,7 @@ structure Server where
   url : string
   description : Option string
   variables : Option <| objectMap (fun _ => serverVariable)
+deriving Inhabited
 
 genStructSchema server for Server
 
@@ -127,6 +131,7 @@ end Server
 structure ExternalDocs where
   description : Option string
   url : string
+deriving Inhabited, Repr
 
 genStructSchema externalDocs for ExternalDocs
 
@@ -135,6 +140,7 @@ structure MediaType where
   «example» : Option any
   examples : Option any
   encoding : Option any
+deriving Inhabited
 
 genStructSchema mediaType for MediaType
 
@@ -161,6 +167,7 @@ structure Parameter where
   examples : Option (objectMap fun _ => any)
   content : Option ((objectMap fun _ => mediaType)
     |>.withProperty (s!"content map does not contain exactly one entry: {·.toArray.map (·.1)}") (·.size = 1))
+deriving Inhabited
 
 genStructSchema parameter for Parameter
 
@@ -170,6 +177,7 @@ structure RequestBody where
   description : Option string
   content : objectMap (fun _ => mediaType)
   required : Option boolean
+deriving Inhabited
 
 genStructSchema requestBody for RequestBody
 
@@ -186,6 +194,7 @@ structure Header where
   schema : Option coreSchema
   «example» : Option any
   examples : Option (objectMap fun _ => any)
+deriving Inhabited
 
 genStructSchema header for Header
 
@@ -194,10 +203,12 @@ structure Response where
   headers : Option (objectMap fun _ => maybeRefObj header)
   content : Option (objectMap fun _ => mediaType)
   links : Option (objectMap fun _ => maybeRefObj any)
+deriving Inhabited
 
 genStructSchema response for Response
 
 def Responses := RBNode String fun _ => Response
+deriving Inhabited
 
 def responses : SchemaM Responses :=
   JsonSchema.objectMap fun _ => maybeRefObj response
@@ -214,7 +225,7 @@ end Responses
 
 inductive SecurityScheme.Type
 | apiKey | http | mutualTLS | oauth2 | openIdConnect
-deriving Lean.FromJson
+deriving Inhabited, Repr, Lean.FromJson
 
 def securityScheme.type : SchemaM SecurityScheme.Type := JsonSchema.ofLeanJson
 
@@ -228,10 +239,13 @@ structure SecurityScheme where
   /-- currently unsupported -/
   flows : Option any
   openIdConnectUrl : Option string
+deriving Inhabited
 
 genStructSchema securityScheme for SecurityScheme
 
 def SecurityRequirement : Type := objectMap fun _ => array string
+deriving Inhabited
+
 def securityRequirement : SchemaM SecurityRequirement := objectMap fun _ => array string
 
 section Paths
@@ -249,6 +263,7 @@ structure Operation where
   deprecated  : Option <| boolean
   security    : Option <| array securityRequirement
   servers     : Option <| array server
+deriving Inhabited
 
 genStructSchema operation for Operation
 
@@ -266,6 +281,7 @@ structure PathItem where
   trace : Option operation
   servers : Option (array server)
   parameters : Option (array (maybeRefObj parameter))
+deriving Inhabited
 
 genStructSchema pathItem for PathItem
 
@@ -282,6 +298,8 @@ def PathItem.ops (i : PathItem) : List (Http.Method × operation) :=
 
 
 def Paths := RBNode String fun path => guard (pathTemplate path) (fun _ => pathItem)
+deriving Inhabited
+
 def paths : SchemaM Paths := objectMap fun path => guard (pathTemplate path) (fun _ => pathItem)
 
 end Paths
@@ -298,6 +316,7 @@ structure Components where
   securitySchemes : Option <| objectMap (fun _ => maybeRefObj securityScheme)
   --links           : Option <| objectMap (fun _ => maybeRefObj link)
   callbacks       : Option <| objectMap (fun _ => maybeRefObj callback)
+deriving Inhabited
 
 genStructSchema components for Components
 
@@ -312,5 +331,6 @@ structure OpenAPI where
   security    : Option <| array securityRequirement
   --tags        : Option <| array tag
   externalDocs : Option externalDocs
+deriving Inhabited
 
 genStructSchema openAPI for OpenAPI
