@@ -1,19 +1,14 @@
 import Lake
 open Lake DSL
 
-package «lean-openapi» {
-  -- add package configuration options here
-}
+package «lean-openapi»
 
 @[default_target]
 lean_lib LeanOpenAPI {
-  -- add library configuration options here
+  precompileModules := true
 }
 
-@[default_target]
-lean_exe «examples» {
-  root := `Examples
-} 
+lean_lib GitHub
 
 require std from git "https://github.com/leanprover/std4" @ "main"
 require Http from git "https://github.com/JamesGallicchio/http" @ "main"
