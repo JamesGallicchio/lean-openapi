@@ -4,7 +4,7 @@
  [{"git":
    {"url": "https://github.com/JamesGallicchio/http",
     "subDir?": null,
-    "rev": "abbc6ccf3f8e868a1ccc14a2fcdf38f93e147c7c",
+    "rev": "94f6772d9f9656b11ae62f548780b004ed9f6db1",
     "opts": {},
     "name": "Http",
     "inputRev?": "main",
@@ -20,11 +20,11 @@
   {"git":
    {"url": "https://github.com/gebner/quote4",
     "subDir?": null,
-    "rev": "a387c0eb611857e2460cf97a8e861c944286e6b2",
+    "rev": "e75daed95ad1c92af4e577fea95e234d7a8401c1",
     "opts": {},
     "name": "Qq",
     "inputRev?": "master",
-    "inherited": false}},
+    "inherited": true}},
   {"git":
    {"url": "https://github.com/fgdorais/lean4-unicode-basic",
     "subDir?": null,
@@ -44,7 +44,7 @@
   {"git":
    {"url": "https://github.com/leanprover/std4",
     "subDir?": null,
-    "rev": "f2df4ab8c0726fce3bafb73a5727336b0c3120ea",
+    "rev": "68517fcd34adbd7b0953a1de3b73080e57e60ba4",
     "opts": {},
     "name": "std",
     "inputRev?": "main",
