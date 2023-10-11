@@ -24,9 +24,9 @@ import LeanOpenAPI
 namespace MyLib
 -- The `genOpenAPI!` macro is scoped, so we need to open this namespace:
 open LeanOpenAPI.Meta
--- now we can generate the API. the argument is a path to a file.
--- (I need to make this more robust to Lake package stuff...)
-genOpenAPI! "examples/api.github.com.json"
+-- now we can generate the API. the argument must have type `IO String`
+-- and should be the json string for the OpenAPI spec
+genOpenAPI! (IO.FS.readFile "examples/api.github.com.json")
 ```
 
 ### Limitations

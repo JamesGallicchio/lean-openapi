@@ -142,3 +142,9 @@ partial def Lean.Json.toYaml (indent : String := "") : Lean.Json → String
 | .obj m  => m.fold (· ++ "\n" ++ indent ++ quote? · ++ ": " ++ toYaml (indent := indent ++ "  ") ·) ""
 where quote? (s : String) : String :=
   if s.all (·.isAlphanum) then s else s.quote
+
+open Lean in
+elab "file%" : term => do
+  let some _pos := (← getRef).getPos?
+    | throwError "no source info"
+  return toExpr (← getFileName)

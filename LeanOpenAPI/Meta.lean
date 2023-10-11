@@ -245,10 +245,13 @@ s!"{sec.toArray}"
 
 end Endpoint
 
-scoped elab "genOpenAPI!" s:str : command => do
-  let f : System.FilePath := s.getString
+open Qq in
+scoped elab "genOpenAPI!" e:term : command => do
+  let io ← liftTermElabM <| do
+    let expr ← Term.elabTerm e (some q(IO String))
+    unsafe evalExpr (IO String) (q(IO String)) expr
 
-  let fileContents ← IO.FS.readFile f
+  let fileContents ← io
   let json : Lean.Json ←
     match Lean.Json.parse fileContents with
     | .ok j => pure j
