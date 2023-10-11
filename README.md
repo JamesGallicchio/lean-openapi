@@ -12,7 +12,7 @@ e.g. [`Socket.lean`](https://github.com/hargoniX/socket.lean).
 
 Add the following to your `lakefile.lean`:
 ```
-require LeanOpenAPI from git "https://github.com/JamesGallicchio/LeanOpenAPI" @ "main"
+require «lean-openapi» from git "http://github.com/JamesGallicchio/lean-openapi" @ "main"
 ```
 
 Then, in a file:
