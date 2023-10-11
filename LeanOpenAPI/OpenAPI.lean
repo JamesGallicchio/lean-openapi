@@ -1,4 +1,4 @@
-/-  Copyright (C) 2023 The Http library contributors.
+/-  Copyright (C) 2023 The OpenAPI library contributors.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -194,6 +194,8 @@ structure Header where
   schema : Option coreSchema
   «example» : Option any
   examples : Option (objectMap fun _ => any)
+  content : Option ((objectMap fun _ => mediaType)
+    |>.withProperty (s!"content map does not contain exactly one entry: {·.toArray.map (·.1)}") (·.size = 1))
 deriving Inhabited
 
 genStructSchema header for Header
@@ -207,19 +209,59 @@ deriving Inhabited
 
 genStructSchema response for Response
 
-def Responses := RBNode String fun _ => Response
+-- TODO: move to Http library
+inductive StatusCodeRange
+| default
+| range (n : Nat)
+| exact (s : Http.StatusCode)
+
+def Http.StatusCode.ofNat! (n : Nat) : Http.StatusCode :=
+  if h1 : _ then
+    if h2 : _ then
+      ⟨⟨n,h1⟩,h2⟩
+    else panic! s!"Http.StatusCode.ofNat!: {n} is not a status code"
+  else panic! s!"Http.StatusCode.ofNat!: {n} is not a status code"
+
+instance : Quote Http.StatusCode where
+  quote | s => Syntax.mkCApp ``Http.StatusCode.ofNat! #[quote s.val.toNat]
+
+instance : Quote StatusCodeRange where
+  quote
+  | .default => Syntax.mkCApp ``StatusCodeRange.default #[]
+  | .range n => Syntax.mkCApp ``StatusCodeRange.range #[quote n]
+  | .exact s => Syntax.mkCApp ``StatusCodeRange.range #[quote s]
+
+def StatusCodeRange.ofString (s : String) : Option StatusCodeRange :=
+  if s = "default" then
+    some .default
+  else if s.length != 3 then
+    none
+  else if (s.get 0).isDigit &&
+          s.get ⟨1⟩ == 'X' &&
+          s.get ⟨2⟩ == 'X' then
+    some <| .range <| (s.get 0).toNat - '0'.toNat
+  else
+    s.toNat? |>.bind (fun n =>
+      if h1 : _ then
+        if h2 : _ then
+          some <| .exact ⟨⟨n, h1⟩, h2⟩
+        else none
+      else none
+    )
+
+def StatusCodeRange.matches : StatusCodeRange → Http.StatusCode → Bool
+| .default, _ => true
+| .range n, sc => sc.val.val / 100 = n
+| .exact sc1, sc2 => sc1 = sc2
+
+def Responses := RBNode String fun _ => StatusCodeRange × Response
 deriving Inhabited
 
 def responses : SchemaM Responses :=
-  JsonSchema.objectMap fun _ => maybeRefObj response
-
-def Responses.get (r : Responses) (code : Http.StatusCode) : Option Response :=
-  let code := toString code.val
-  r.find compare code
-  |>.orElse fun () =>
-  r.find compare s!"{code.get 0}XX"
-  |>.orElse fun () =>
-  r.find compare "default"
+  JsonSchema.objectMap fun s => do
+    let r ← Option.toMonad <| StatusCodeRange.ofString s
+    let res ← maybeRefObj response
+    return (r,res)
 
 end Responses
 

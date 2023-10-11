@@ -1,4 +1,4 @@
-/-  Copyright (C) 2023 The Http library contributors.
+/-  Copyright (C) 2023 The OpenAPI library contributors.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,9 +21,38 @@ namespace LeanOpenAPI.Meta
 open OpenAPI
 
 open Lean Elab Meta Command
-def explicitBinderF := Parser.Term.explicitBinder false
+private def explicitBinderF := Parser.Term.explicitBinder false
 
 section Endpoint
+
+/-- process various places in openapi where content-type maps appear.
+example:
+```json
+"content": {
+  "application/json": {
+    "schema": <schema>
+  }
+}
+```
+-/
+def processContentType (content : JsonSchema.objectMap fun _ => mediaType) := do
+  let ⟨ct, mt⟩ ← do
+    let arr := content.toArray
+    if h : arr.size > 0 then
+      let res := arr[0]
+      if arr.size > 1 then
+        logWarning s!"multiple content types. using {res.1}, full list:\n{repr arr}"
+      pure res
+    else
+      throwError "no content types listed"
+  match mt.schema, mt.encoding with
+  | _, some enc =>
+    throwError s!"content type {ct} with encoding (not supported):\n{
+      enc.val.pretty}"
+  | none, none =>
+    throwError s!"content type {ct} with no schema (disallowed)"
+  | some schema, none =>
+    return (ct, ← schema.toRes)
 
 /-- Construct the docstring from a bunch of potential doc elements -/
 def genDocstring (item : PathItem) (op : Operation)
@@ -128,23 +157,7 @@ def genRequestBody (rb : RequestBody) : TermElabM <|
   if !(rb.required.isEqSome true (α := Bool)) then
     logWarning s!"request body not required; currently unsupported"
 
-  let ⟨ct, mt⟩ ← do
-    let arr := rb.content.toArray
-    if h : arr.size > 0 then
-      let res := arr[0]
-      if arr.size > 1 then
-        logWarning s!"request body has multiple content types. using {res.1}.\n{repr arr}"
-      pure res
-    else
-      throwError "request body has no content types listed"
-  match mt.schema, mt.encoding with
-  | _, some enc =>
-    throwError s!"request body supports content type {ct} with an encoding:\n{
-      enc.val.pretty}"
-  | none, none =>
-    throwError s!"request body supports content type {ct} but does not provide a schema for it"
-  | some schema, none =>
-  let res ← schema.toRes
+  let (ct, res) ← processContentType rb.content
   let body : Ident := mkIdent `body
   let binder ← `(Lean.Parser.Term.bracketedBinderF| ($body : $res.type))
   let type ← `(String)
@@ -155,10 +168,39 @@ def genRequestBody (rb : RequestBody) : TermElabM <|
     ].filterMap id |> String.intercalate "\n"
   return (docs, ct, binder, type, val)
 
+/-- generate structure for a given response, and a function to take an
+  `Http.Response String` to the generated structure. -/
+def genResponseType (res : Response) (ident : Ident)
+    : TermElabM (TSyntax `command × Term) := do
+  let headers ← res.headers.map (·.toArray) |>.getD #[]
+    |>.mapM fun ⟨name,h⟩ => do
+        match h.schema, h.content with
+        | some _, some _ => throwError "both schema and content specified?"
+        | none, none => throwError "neither schema nor content specified"
+        | some s, none =>
+          let what ← s.toRes
+          return (name,what)
+        | none, some ct =>
+          let (_, what) ← processContentType (Subtype.val ct)
+          return (name,what)
+  let fields ← headers.mapM (fun (s,res) =>
+    `(Lean.Parser.Command.structExplicitBinder|
+      $(res.docs.map Lean.mkDocComment):docComment ?
+      ( $(mkIdent s) : $(res.type) )
+    ))
+  let docstring : String := res.description
+  let struct ← `(
+    $(Lean.mkDocComment docstring):docComment
+    structure $ident where
+      $fields:structExplicitBinder*
+  )
+  let func ← `(sorry)
+  return (struct, func)
+
 /-- generate endpoint for the given arguments, returning the command to be elaborated -/
 def genEndpoint (serverUrlId : Ident) (path : PathTemplate) (item : PathItem)
                 (method : Http.Method) (op : Operation)
-    : TermElabM (TSyntax `command) := do
+    : TermElabM (Array <| TSyntax `command) := do
   let some id := op.operationId.map (mkIdent ∘ Name.mkSimple)
     | throwError s!"no operation id"
     
@@ -214,8 +256,13 @@ s!"{sec.toArray}"
   
   let docstring := genDocstring item op paramSchemas reqDocs
 
-  let mainCmd ← `(
+  let mut cmds := #[]
+  cmds := cmds.push <| ← `(
     $(Lean.mkDocComment docstring):docComment
+    $(if deprecated.val then
+        some (← `(Lean.Parser.Term.«attributes»| @[deprecated]))
+      else none
+    ):attributes ?
     def $id:ident $[ $(paramBinders ++ reqBodyParam.toArray):bracketedBinder ]*
       : Http.Request $reqBodyType
       :=
@@ -238,10 +285,37 @@ s!"{sec.toArray}"
         (headers := $headerId)
         (body := $reqBodyVal)
   )
+  
+  -- now we go through the (enormous) effort of generating
+  -- reasonable types for the response object
 
-  if deprecated.val then
-    return ← `($mainCmd:command attribute [deprecated] $id)
-  else return mainCmd
+  let responses ← op.responses.getD .leaf
+    |>.toArray.mapM (fun ⟨s,scr,res⟩ => do
+      let id : Ident := mkIdent s
+      return (s, id, scr, ← genResponseType res id))
+
+  let respIds := responses.map (·.2.1)
+
+  cmds := cmds ++ responses.map (·.2.2.2.1)
+
+  let responseType : Ident := mkIdent <| id.getId.str "ResponseType"
+
+  cmds := cmds.push <| ← `(
+    inductive $responseType where
+    $[| protected $respIds:ident (res : $(_root_.id respIds):ident) ]*
+
+    def $(mkIdent <| id.getId.str "getResponse") (res : Http.Response String)
+        : Except String $responseType :=
+      $( ← responses.foldlM (fun acc resp => `(
+          if StatusCodeRange.matches $(quote resp.2.2.1):term res.status
+          then $(resp.2.2.2.2):term res
+          else $acc
+        ))
+        (← `(.error "bad"))
+      )
+  )
+
+  return cmds
 
 end Endpoint
 
@@ -295,6 +369,6 @@ scoped elab "genOpenAPI!" e:term : command => do
     for (method, op) in item.ops do
       try
         let cmds ← liftTermElabM <| genEndpoint serverUrlId pt item method op
-        elabCommand cmds
+        for c in cmds do elabCommand c
       catch e =>
         logWarning s!"{method} {path}: skipping due to error:\n{← e.toMessageData.toString}"

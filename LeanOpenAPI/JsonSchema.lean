@@ -1,4 +1,4 @@
-/-  Copyright (C) 2023 The Http library contributors.
+/-  Copyright (C) 2023 The OpenAPI library contributors.
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -88,6 +88,9 @@ def run (m : SchemaM α) (j : Lean.Json) : Except String α := m j ⟨[]⟩ j
   fun top _ _ => s top r j
 
 instance : Monad SchemaM := inferInstanceAs (Monad (ExceptT _ _))
+instance : Alternative SchemaM where
+  failure := throw "failure"
+  orElse s f := fun a b c => Except.orElseLazy (s a b c) (fun () => f () a b c)
 instance : MonadLift (Except String) SchemaM where
   monadLift e := show ExceptT _ _ _ from liftM e
 
