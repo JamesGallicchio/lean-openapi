@@ -48,7 +48,7 @@ instance : Lean.Quote PathTemplate where
 def pathTemplate (s : String) : Except String PathTemplate := do
   if !s.startsWith "/" then
     throw "Expected path template to start with /"
-  
+
   let params ← findVars 0 []
   return .ofParams s params
 where findVars (start : String.Pos) (acc : List String) : Except String (List String) := do
@@ -60,11 +60,11 @@ where findVars (start : String.Pos) (acc : List String) : Except String (List St
     let rightBracIdx := String.posOfAux s '}' s.endPos (s.next leftBracIdx)
     if s.atEnd rightBracIdx then
       throw "mismatched { in path template"
-      
+
     let var := { str := s, startPos := s.next leftBracIdx,
                   stopPos := rightBracIdx : Substring }
         |>.toString
-    
+
     if var.any (· ∈ ['{', '}', '/', '?', '#']) then
       throw s!"path parameter name contains special characters: `{var}`"
 
@@ -136,7 +136,7 @@ deriving Inhabited, Repr
 genStructSchema externalDocs for ExternalDocs
 
 structure MediaType where
-  schema : Option coreSchema
+  schema : Option (maybeRefObj coreSchema)
   «example» : Option any
   examples : Option any
   encoding : Option any
@@ -162,7 +162,7 @@ structure Parameter where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option coreSchema
+  schema : Option (maybeRefObj coreSchema)
   «example» : Option any
   examples : Option (objectMap fun _ => any)
   content : Option ((objectMap fun _ => mediaType)
@@ -191,7 +191,7 @@ structure Header where
   style : Option string
   explode : Option boolean
   allowReserved : Option boolean
-  schema : Option coreSchema
+  schema : Option (maybeRefObj coreSchema)
   «example» : Option any
   examples : Option (objectMap fun _ => any)
   content : Option ((objectMap fun _ => mediaType)
