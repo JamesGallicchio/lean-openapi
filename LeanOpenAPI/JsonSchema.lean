@@ -190,7 +190,7 @@ scoped elab "genStructSchema " defnId:ident "for " struct:ident : command =>
     let (type, optional) :=
       match type.app1? ``Option with
       | some type => (type, true)
-      | none => (type, false) 
+      | none => (type, false)
     let some (_type, schema) := type.app2? ``SchemaM.toType
       | throwError "Field {field} has a type which is not derived from a schema:\n{type}
 This deriver only works if all fields have a type of the form `SchemaM.toType <schema>`"
@@ -328,6 +328,7 @@ structure Res where
   docs : Option String
   type : Lean.Syntax.Term
   toString : Lean.Syntax.Term
+  fromString : Lean.Syntax.Term
   default : Option Lean.Syntax.Term
 deriving Inhabited, Repr
 
@@ -342,23 +343,29 @@ def toRes (s : CoreSchema) : Lean.Elab.TermElabM Res := do
   match Lean.FromJson.fromJson? (α := «Type») type with
   | .error _ => fallback j
   | .ok ty =>
-  let analyze : Option (Lean.Term × Lean.Term) ←
+  let analyze : Option (Lean.Term × Lean.Term × Lean.Term) ←
     (match ty with
-      | .integer  => do return some ( ← `(Int)            , ← `(toString) )
-      | .number   => do return some ( ← `(Lean.JsonNumber), ← `(toString) )
-      | .string   => do return some ( ← `(String)         , ← `(toString) )
-      | .boolean  => do return some ( ← `(Bool)           , ← `(toString) )
-      | .object   => do return some ( ← `(Lean.Json)      , ← `(Lean.Json.pretty))
+      | .integer  => do
+        return some ( ← `(Int)            , ← `(toString)        , ← `(Option.toMonad ∘ String.toInt?))
+      | .number   => do
+        return some ( ← `(Lean.JsonNumber), ← `(toString)        , ← `((Lean.Json.parse · >>= Lean.Json.getNum?)))
+      | .string   => do
+        return some ( ← `(String)         , ← `(id)              , ← `(pure))
+      | .boolean  => do
+        return some ( ← `(Bool)           , ← `(toString)        , ← `(Bool.fromString))
+      | .object   => do
+        return some ( ← `(Lean.Json)      , ← `(Lean.Json.pretty), ← `(Lean.Json.parse))
       | .array    => pure none
     )
-  let some (type, toString) := analyze
+  let some (type, toString, fromString) := analyze
     | return ← fallback j
   let docs := some j.toYaml
-  return { docs, type, toString, default }
+  return { docs, type, toString, fromString, default }
 where fallback (j) := do return {
   docs := some (j.toYaml)
   type := ← `(String)
   toString := ← `(id)
+  fromString := ← `(pure)
   default := none
 }
 

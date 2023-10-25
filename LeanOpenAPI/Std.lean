@@ -148,3 +148,8 @@ elab "file%" : term => do
   let some _pos := (← getRef).getPos?
     | throwError "no source info"
   return toExpr (← getFileName)
+
+def Bool.fromString : String → Except String Bool
+| "true" => .ok true
+| "false" => .ok false
+| _ => .error "expected 'true' or 'false'"

@@ -35,7 +35,8 @@ example:
 }
 ```
 -/
-def processContentType (content : JsonSchema.objectMap fun _ => mediaType) := do
+def processContentType (content : JsonSchema.objectMap fun _ => mediaType)
+  := do
   let ⟨ct, mt⟩ ← do
     let arr := content.toArray
     if h : arr.size > 0 then
@@ -50,7 +51,7 @@ def processContentType (content : JsonSchema.objectMap fun _ => mediaType) := do
     throwError s!"content type {ct} with encoding (not supported):\n{
       enc.val.pretty}"
   | none, none =>
-    throwError s!"content type {ct} with no schema (disallowed)"
+    throwError s!"content type {ct} with no schema (not supported)"
   | some schema, none =>
     return (ct, ← schema.toRes)
 
@@ -87,7 +88,7 @@ def genPathHandler (path : PathTemplate) (paramSchemas : Array (Parameter × Jso
   for (p,_) in pathParams do
     if !(p.required.isEqSome (α := Bool) true) then
       throwError "Parameter {p.name.val} is path parameter, but is not required"
-  
+
   let pathParamStrLits : Array StrLit := pathParams.map (Syntax.mkStrLit ·.1.name.val)
   let pathParamNames   : Array Ident := pathParams.map (mkIdent ·.1.name.val)
   let pathParamToString: Array Term := pathParams.map (·.2.toString)
@@ -172,29 +173,92 @@ def genRequestBody (rb : RequestBody) : TermElabM <|
   `Http.Response String` to the generated structure. -/
 def genResponseType (res : Response) (ident : Ident)
     : TermElabM (TSyntax `command × Term) := do
-  let headers ← res.headers.map (·.toArray) |>.getD #[]
+  let headers ←
+    res.headers.map (·.toArray) |>.getD #[]
     |>.mapM fun ⟨name,h⟩ => do
+      let sres ←
         match h.schema, h.content with
         | some _, some _ => throwError "both schema and content specified?"
         | none, none => throwError "neither schema nor content specified"
         | some s, none =>
-          let what ← s.toRes
-          return (name,what)
+          s.toRes
         | none, some ct =>
-          let (_, what) ← processContentType (Subtype.val ct)
-          return (name,what)
-  let fields ← headers.mapM (fun (s,res) =>
+          let (_, sres) ← processContentType (Subtype.val ct)
+          pure sres
+      return (name, h.required.getD false |>.val, sres)
+
+  let (bodyTy, bodyFromStr, bodyDocs) ← do
+    match res.content with
+    | none => pure (← `(Unit), ← `(fun _ => pure ()), none)
+    | some ct =>
+      let (_ct,sch) ← processContentType ct
+      pure (sch.type, sch.fromString, (do return s!"```\n{← sch.docs}\n```"))
+
+  let fields ←
+    headers.mapM (fun (s,req,res) => do
     `(Lean.Parser.Command.structExplicitBinder|
       $(res.docs.map Lean.mkDocComment):docComment ?
-      ( $(mkIdent s) : $(res.type) )
+      ( $(mkIdent s) : $(
+        if req then
+          res.type
+        else
+          ← `(Option $(res.type))
+      ) )
     ))
+
   let docstring : String := res.description
+
   let struct ← `(
     $(Lean.mkDocComment docstring):docComment
     structure $ident where
       $fields:structExplicitBinder*
+      $(Lean.mkDocComment <$> bodyDocs):docComment ?
+      body : $bodyTy
+    deriving Inhabited, Repr
   )
-  let func ← `(sorry)
+
+  let lvals := headers.map (fun (s,_res) =>
+    mkIdent s /-`(Lean.Parser.Term.structInstLVal|
+      $(mkIdent s):ident
+    )-/)
+
+  let x : Ident := mkIdent "x"
+
+  let fromStrs ← headers.mapM (fun (s,req,res) => do
+    let hdrOpt : Term ← `(
+      Std.HashMap.find? (Http.Response.headers $x)
+        (Http.HeaderName.ofHeaderString $(Syntax.mkStrLit s))
+    )
+    if req then
+      `(
+      match $hdrOpt:term with
+      | none => throw $(Syntax.mkStrLit <|
+          s!"expected header '{s}', but was absent")
+      | some [hdr] => $(res.fromString):term hdr
+      | some _ => throw $(Syntax.mkStrLit <|
+          s!"expected header '{s}', but response included multiple such headers")
+      )
+    else
+      `(do
+      match $hdrOpt:term with
+      | none => return none
+      | some [hdr] =>
+        return some <| ← $(res.fromString):term hdr
+      | some _ =>
+        throw $(Syntax.mkStrLit <|
+          s!"expected header '{s}', but response included multiple such headers")
+      )
+    )
+
+  let func ← `(
+    (fun ($x : Http.Response String) =>
+      show Except _ $ident from do
+        return .mk
+          $[ ($lvals := ← $fromStrs) ]*
+          (← $bodyFromStr ($x).body)
+        )
+    )
+
   return (struct, func)
 
 /-- generate endpoint for the given arguments, returning the command to be elaborated -/
@@ -203,7 +267,7 @@ def genEndpoint (serverUrlId : Ident) (path : PathTemplate) (item : PathItem)
     : TermElabM (Array <| TSyntax `command) := do
   let some id := op.operationId.map (mkIdent ∘ Name.mkSimple)
     | throwError s!"no operation id"
-    
+
   if op.security.isSome then
     let secs := op.security.get!.val
     throwError s!"security not yet supported
@@ -234,7 +298,7 @@ s!"{sec.toArray}"
       else
         `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p.name.val):ident : Option $(s.type):term := none) )
     )
-  
+
   let urlId := mkIdent `url
   let pathHandler ← genPathHandler path paramSchemas urlId
   let queryHandler ← genQueryHandler paramSchemas urlId
@@ -253,7 +317,7 @@ s!"{sec.toArray}"
         let $headerId := ($headerId).add (Http.HeaderName.standard .CONTENT_TYPE) $(Syntax.mkStrLit ct)
       )
       pure (some docs, some ctHeader, some param, type, val)
-  
+
   let docstring := genDocstring item op paramSchemas reqDocs
 
   let mut cmds := #[]
@@ -285,30 +349,33 @@ s!"{sec.toArray}"
         (headers := $headerId)
         (body := $reqBodyVal)
   )
-  
+
   -- now we go through the (enormous) effort of generating
   -- reasonable types for the response object
 
   let responses ← op.responses.getD .leaf
     |>.toArray.mapM (fun ⟨s,scr,res⟩ => do
-      let id : Ident := mkIdent s
+      let id : Ident := mkIdent <| id.getId.str s
       return (s, id, scr, ← genResponseType res id))
 
-  let respIds := responses.map (·.2.1)
+  let respNames := responses.map (fun (s,_) => mkIdent s)
+  let respIds := responses.map (fun (_s,id,_) => id)
 
-  cmds := cmds ++ responses.map (·.2.2.2.1)
+  cmds := cmds ++ responses.map (fun (_s,_id,_r,c,_f) => c)
 
   let responseType : Ident := mkIdent <| id.getId.str "ResponseType"
 
   cmds := cmds.push <| ← `(
     inductive $responseType where
-    $[| protected $respIds:ident (res : $(_root_.id respIds):ident) ]*
+    $[| protected $respNames:ident (res : $(_root_.id respIds):ident) ]*
+    deriving Repr
 
     def $(mkIdent <| id.getId.str "getResponse") (res : Http.Response String)
         : Except String $responseType :=
-      $( ← responses.foldlM (fun acc resp => `(
-          if StatusCodeRange.matches $(quote resp.2.2.1):term res.status
-          then $(resp.2.2.2.2):term res
+      $( ← responses.foldlM (fun acc (s,_id,r,_c,f) => `(
+          if Http.StatusCodeRange.matches $(quote r):term res.status
+          then do let res' ← ($f) res; return $(
+              mkIdent <| responseType.getId ++ s) res'
           else $acc
         ))
         (← `(.error "bad"))
@@ -331,7 +398,7 @@ scoped elab "genOpenAPI!" e:term : command => do
     | .ok j => pure j
     | .error e =>
       throwError s!"error parsing json from file: {e}"
- 
+
   let api ←
     match openAPI.run json with
     | .ok (j : OpenAPI) => pure j
@@ -346,10 +413,10 @@ scoped elab "genOpenAPI!" e:term : command => do
     if servers.size > 1 then
       logWarning s!"API lists multiple top-level servers..."
     pure s
-  
+
   if server.variables.isSome then
     throwError s!"server {server.url.val} contains server variables (not yet supported)"
-  
+
   if api.security.isSome then
     throwError "API security schemes not yet supported"
 
@@ -362,13 +429,14 @@ scoped elab "genOpenAPI!" e:term : command => do
   for ⟨path, pt, item⟩ in api.paths.toArray do
     if item.«$ref».isSome then
       logWarning s!"Path {path} has a $ref item. This is not currently supported."; continue
-    
+
     if item.servers.isSome then
       logWarning s!"Path {path} lists more servers (not supported)"; continue
 
     for (method, op) in item.ops do
       try
         let cmds ← liftTermElabM <| genEndpoint serverUrlId pt item method op
-        for c in cmds do elabCommand c
+        for c in cmds do
+          elabCommand c
       catch e =>
         logWarning s!"{method} {path}: skipping due to error:\n{← e.toMessageData.toString}"
