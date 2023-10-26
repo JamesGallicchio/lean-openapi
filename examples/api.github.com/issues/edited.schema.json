@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "issues$edited",
+  "type": "object",
+  "required": ["action", "changes", "issue", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "issue": { "$ref": "common/issue.schema.json" },
+    "label": { "$ref": "common/label.schema.json" },
+    "changes": {
+      "type": "object",
+      "description": "The changes to the issue.",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the body."
+            }
+          },
+          "additionalProperties": false
+        },
+        "title": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the title."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "issues edited event"
+}

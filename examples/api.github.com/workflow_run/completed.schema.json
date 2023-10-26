@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "workflow_run$completed",
+  "type": "object",
+  "required": ["action", "repository", "sender", "workflow", "workflow_run"],
+  "properties": {
+    "action": { "type": "string", "enum": ["completed"] },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "workflow": { "$ref": "common/workflow.schema.json" },
+    "workflow_run": {
+      "allOf": [
+        { "$ref": "common/workflow-run.schema.json" },
+        {
+          "type": "object",
+          "required": ["conclusion"],
+          "properties": {
+            "conclusion": {
+              "type": "string",
+              "enum": [
+                "success",
+                "failure",
+                "neutral",
+                "cancelled",
+                "timed_out",
+                "action_required",
+                "stale",
+                "skipped"
+              ]
+            }
+          },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "installation": { "$ref": "common/installation-lite.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "workflow_run completed event"
+}

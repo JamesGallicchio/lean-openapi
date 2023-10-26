@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "release$edited",
+  "type": "object",
+  "required": ["action", "changes", "release", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "changes": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the body if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        },
+        "name": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the name if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "release": { "$ref": "common/release.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "release edited event"
+}

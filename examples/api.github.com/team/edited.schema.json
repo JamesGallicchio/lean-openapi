@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "team$edited",
+  "type": "object",
+  "required": ["action", "changes", "team", "organization", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "changes": {
+      "type": "object",
+      "description": "The changes to the team if the action was `edited`.",
+      "required": [],
+      "properties": {
+        "description": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the description if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        },
+        "name": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the name if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        },
+        "privacy": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the team's privacy if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        },
+        "repository": {
+          "type": "object",
+          "required": ["permissions"],
+          "properties": {
+            "permissions": {
+              "type": "object",
+              "required": ["from"],
+              "properties": {
+                "from": {
+                  "type": "object",
+                  "properties": {
+                    "admin": {
+                      "type": "boolean",
+                      "description": "The previous version of the team member's `admin` permission on a repository, if the action was `edited`."
+                    },
+                    "pull": {
+                      "type": "boolean",
+                      "description": "The previous version of the team member's `pull` permission on a repository, if the action was `edited`."
+                    },
+                    "push": {
+                      "type": "boolean",
+                      "description": "The previous version of the team member's `push` permission on a repository, if the action was `edited`."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "team": { "$ref": "common/team.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "team edited event"
+}

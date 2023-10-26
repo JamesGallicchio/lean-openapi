@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "project_card$moved",
+  "type": "object",
+  "required": ["action", "project_card", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["moved"] },
+    "changes": {
+      "type": "object",
+      "required": ["column_id"],
+      "properties": {
+        "column_id": {
+          "type": "object",
+          "required": ["from"],
+          "properties": { "from": { "type": "integer" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "project_card": {
+      "allOf": [
+        { "$ref": "common/project-card.schema.json" },
+        {
+          "type": "object",
+          "required": ["after_id"],
+          "properties": { "after_id": { "type": ["number", "null"] } },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "project_card moved event"
+}

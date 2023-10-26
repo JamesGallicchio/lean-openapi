@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "issues$unlabeled",
+  "type": "object",
+  "required": ["action", "issue", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["unlabeled"] },
+    "issue": { "$ref": "common/issue.schema.json" },
+    "label": {
+      "$ref": "common/label.schema.json",
+      "description": "The label that was removed from the issue."
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "issues unlabeled event"
+}

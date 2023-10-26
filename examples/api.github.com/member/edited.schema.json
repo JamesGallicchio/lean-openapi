@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "member$edited",
+  "type": "object",
+  "required": ["action", "changes", "member", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "member": {
+      "$ref": "common/user.schema.json",
+      "description": "The user who's permissions are changed."
+    },
+    "changes": {
+      "type": "object",
+      "description": "The changes to the collaborator permissions",
+      "required": ["old_permission"],
+      "properties": {
+        "old_permission": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous permissions of the collaborator if the action was edited."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "member edited event"
+}

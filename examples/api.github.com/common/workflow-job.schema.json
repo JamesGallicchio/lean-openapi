@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "common/workflow-job.schema.json",
+  "required": [
+    "id",
+    "run_id",
+    "run_url",
+    "run_attempt",
+    "node_id",
+    "head_sha",
+    "url",
+    "html_url",
+    "status",
+    "conclusion",
+    "started_at",
+    "completed_at",
+    "created_at",
+    "name",
+    "steps",
+    "check_run_url",
+    "labels",
+    "runner_id",
+    "runner_name",
+    "runner_group_id",
+    "runner_group_name",
+    "workflow_name",
+    "head_branch"
+  ],
+  "description": "The workflow job. Many `workflow_job` keys, such as `head_sha`, `conclusion`, and `started_at` are the same as those in a [`check_run`](#check_run) object.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer" },
+    "run_id": { "type": "number" },
+    "run_attempt": { "type": "integer" },
+    "run_url": { "type": "string", "format": "uri" },
+    "head_sha": { "type": "string" },
+    "node_id": { "type": "string" },
+    "name": { "type": "string" },
+    "check_run_url": { "type": "string", "format": "uri" },
+    "html_url": { "type": "string", "format": "uri" },
+    "url": { "type": "string", "format": "uri" },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "in_progress", "completed", "waiting"],
+      "description": "The current status of the job. Can be `queued`, `in_progress`, or `completed`."
+    },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "workflow-step.schema.json" }
+    },
+    "conclusion": {
+      "type": ["string", "null"],
+      "enum": ["success", "failure", "cancelled", "skipped", null]
+    },
+    "labels": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Custom labels for the job. Specified by the [`\"runs-on\"` attribute](https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on) in the workflow YAML."
+    },
+    "runner_id": {
+      "type": ["integer", "null"],
+      "description": "The ID of the runner that is running this job. This will be `null` as long as `workflow_job[status]` is `queued`."
+    },
+    "runner_name": {
+      "type": ["string", "null"],
+      "description": "The name of the runner that is running this job. This will be `null` as long as `workflow_job[status]` is `queued`."
+    },
+    "runner_group_id": {
+      "type": ["integer", "null"],
+      "description": "The ID of the runner group that is running this job. This will be `null` as long as `workflow_job[status]` is `queued`."
+    },
+    "runner_group_name": {
+      "type": ["string", "null"],
+      "description": "The name of the runner group that is running this job. This will be `null` as long as `workflow_job[status]` is `queued`."
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": {
+      "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "workflow_name": {
+      "type": ["string", "null"],
+      "description": "The name of the workflow."
+    },
+    "head_branch": {
+      "type": ["string", "null"],
+      "description": "The name of the current branch."
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false,
+  "title": "Workflow Job"
+}

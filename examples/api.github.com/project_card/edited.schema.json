@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "project_card$edited",
+  "type": "object",
+  "required": ["action", "changes", "project_card", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "changes": {
+      "type": "object",
+      "required": ["note"],
+      "properties": {
+        "note": {
+          "type": "object",
+          "required": ["from"],
+          "properties": { "from": { "type": "string" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "project_card": { "$ref": "common/project-card.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "project_card edited event"
+}

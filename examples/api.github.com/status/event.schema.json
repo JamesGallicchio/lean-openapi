@@ -1,0 +1,191 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "status$event",
+  "type": "object",
+  "required": [
+    "id",
+    "sha",
+    "name",
+    "target_url",
+    "context",
+    "description",
+    "state",
+    "commit",
+    "branches",
+    "created_at",
+    "updated_at",
+    "repository",
+    "sender"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "description": "The unique identifier of the status."
+    },
+    "sha": { "type": "string", "description": "The Commit SHA." },
+    "name": { "type": "string" },
+    "avatar_url": { "type": ["string", "null"], "format": "uri" },
+    "target_url": {
+      "type": ["string", "null"],
+      "description": "The optional link added to the status."
+    },
+    "context": { "type": "string" },
+    "description": {
+      "type": ["string", "null"],
+      "description": "The optional human-readable description added to the status."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["pending", "success", "failure", "error"],
+      "description": "The new state. Can be `pending`, `success`, `failure`, or `error`."
+    },
+    "commit": {
+      "type": "object",
+      "required": [
+        "sha",
+        "node_id",
+        "commit",
+        "url",
+        "html_url",
+        "comments_url",
+        "author",
+        "committer",
+        "parents"
+      ],
+      "properties": {
+        "sha": { "type": "string" },
+        "node_id": { "type": "string" },
+        "commit": {
+          "type": "object",
+          "required": [
+            "author",
+            "committer",
+            "message",
+            "tree",
+            "url",
+            "comment_count",
+            "verification"
+          ],
+          "properties": {
+            "author": {
+              "allOf": [
+                { "$ref": "common/committer.schema.json" },
+                {
+                  "type": "object",
+                  "required": ["date"],
+                  "properties": { "date": { "type": "string" } },
+                  "tsAdditionalProperties": false
+                }
+              ]
+            },
+            "committer": {
+              "allOf": [
+                { "$ref": "common/committer.schema.json" },
+                {
+                  "type": "object",
+                  "required": ["date"],
+                  "properties": { "date": { "type": "string" } },
+                  "tsAdditionalProperties": false
+                }
+              ]
+            },
+            "message": { "type": "string" },
+            "tree": {
+              "type": "object",
+              "required": ["sha", "url"],
+              "properties": {
+                "sha": { "type": "string" },
+                "url": { "type": "string", "format": "uri" }
+              },
+              "additionalProperties": false
+            },
+            "url": { "type": "string", "format": "uri" },
+            "comment_count": { "type": "integer" },
+            "verification": {
+              "type": "object",
+              "required": ["verified", "reason", "signature", "payload"],
+              "properties": {
+                "verified": { "type": "boolean" },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "expired_key",
+                    "not_signing_key",
+                    "gpgverify_error",
+                    "gpgverify_unavailable",
+                    "unsigned",
+                    "unknown_signature_type",
+                    "no_user",
+                    "unverified_email",
+                    "bad_email",
+                    "unknown_key",
+                    "malformed_signature",
+                    "invalid",
+                    "valid"
+                  ]
+                },
+                "signature": { "type": ["string", "null"] },
+                "payload": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "url": { "type": "string", "format": "uri" },
+        "html_url": { "type": "string", "format": "uri" },
+        "comments_url": { "type": "string", "format": "uri" },
+        "author": {
+          "oneOf": [{ "$ref": "common/user.schema.json" }, { "type": "null" }]
+        },
+        "committer": {
+          "oneOf": [{ "$ref": "common/user.schema.json" }, { "type": "null" }]
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sha", "url", "html_url"],
+            "properties": {
+              "sha": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "html_url": { "type": "string", "format": "uri" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "branches": {
+      "type": "array",
+      "description": "An array of branch objects containing the status' SHA. Each branch contains the given SHA, but the SHA may or may not be the head of the branch. The array includes a maximum of 10 branches.",
+      "items": {
+        "type": "object",
+        "required": ["name", "commit", "protected"],
+        "properties": {
+          "name": { "type": "string" },
+          "commit": {
+            "type": "object",
+            "required": ["sha", "url"],
+            "properties": {
+              "sha": { "type": "string" },
+              "url": { "type": "string", "format": "uri" }
+            },
+            "additionalProperties": false
+          },
+          "protected": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "status event"
+}

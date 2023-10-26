@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "release$unpublished",
+  "type": "object",
+  "required": ["action", "release", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["unpublished"] },
+    "release": {
+      "allOf": [
+        { "$ref": "common/release.schema.json" },
+        {
+          "type": "object",
+          "required": ["published_at"],
+          "properties": { "published_at": { "type": "null" } },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "release unpublished event"
+}

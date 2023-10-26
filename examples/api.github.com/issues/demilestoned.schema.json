@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "issues$demilestoned",
+  "type": "object",
+  "required": ["action", "issue", "milestone", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["demilestoned"] },
+    "issue": {
+      "allOf": [
+        { "$ref": "common/issue.schema.json" },
+        {
+          "type": "object",
+          "required": ["milestone"],
+          "properties": { "milestone": { "type": "null" } },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "milestone": { "$ref": "common/milestone.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "issues demilestoned event"
+}

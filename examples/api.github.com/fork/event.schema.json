@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "fork$event",
+  "type": "object",
+  "description": "A user forks a repository.",
+  "required": ["forkee", "repository", "sender"],
+  "properties": {
+    "forkee": {
+      "description": "The created [`repository`](https://docs.github.com/en/rest/reference/repos#get-a-repository) resource.",
+      "allOf": [
+        { "$ref": "common/repository.schema.json" },
+        {
+          "type": "object",
+          "properties": { "fork": { "type": "boolean", "enum": [true] } },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "fork event"
+}

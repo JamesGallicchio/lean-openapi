@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "team$removed_from_repository",
+  "type": "object",
+  "required": ["action", "team", "organization", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["removed_from_repository"] },
+    "team": { "$ref": "common/team.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "team removed_from_repository event"
+}

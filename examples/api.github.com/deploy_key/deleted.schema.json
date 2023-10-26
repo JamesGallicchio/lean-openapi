@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "deploy_key$deleted",
+  "type": "object",
+  "required": ["action", "key", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["deleted"] },
+    "key": {
+      "type": "object",
+      "description": "The [`deploy key`](https://docs.github.com/en/rest/reference/deployments#get-a-deploy-key) resource.",
+      "required": [
+        "id",
+        "key",
+        "url",
+        "title",
+        "verified",
+        "created_at",
+        "read_only"
+      ],
+      "properties": {
+        "id": { "type": "integer" },
+        "key": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "title": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "read_only": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "deploy_key deleted event"
+}

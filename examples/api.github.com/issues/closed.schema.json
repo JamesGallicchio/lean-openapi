@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "issues$closed",
+  "type": "object",
+  "required": ["action", "issue", "repository", "sender"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["closed"],
+      "description": "The action that was performed."
+    },
+    "issue": {
+      "description": "The [issue](https://docs.github.com/en/rest/reference/issues) itself.",
+      "allOf": [
+        { "$ref": "common/issue.schema.json" },
+        {
+          "type": "object",
+          "required": ["state", "closed_at"],
+          "properties": {
+            "state": { "type": "string", "enum": ["closed"] },
+            "closed_at": { "type": "string" }
+          },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "issues closed event"
+}

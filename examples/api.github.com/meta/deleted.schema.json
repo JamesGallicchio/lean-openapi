@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "meta$deleted",
+  "type": "object",
+  "required": ["action", "hook_id", "hook", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["deleted"] },
+    "hook_id": {
+      "type": "integer",
+      "description": "The id of the modified webhook."
+    },
+    "hook": {
+      "type": "object",
+      "description": "The modified webhook. This will contain different keys based on the type of webhook it is: repository, organization, business, app, or GitHub Marketplace.",
+      "required": [
+        "type",
+        "id",
+        "name",
+        "active",
+        "events",
+        "config",
+        "updated_at",
+        "created_at"
+      ],
+      "properties": {
+        "type": { "type": "string" },
+        "id": { "type": "integer" },
+        "name": { "type": "string" },
+        "active": { "type": "boolean" },
+        "events": { "$ref": "common/webhook-events.schema.json" },
+        "config": {
+          "type": "object",
+          "required": ["content_type", "url", "insecure_ssl"],
+          "description": "Configuration object of the webhook",
+          "properties": {
+            "content_type": {
+              "type": "string",
+              "enum": ["json", "form"],
+              "description": "The media type used to serialize the payloads. Supported values include `json` and `form`. The default is `form`."
+            },
+            "secret": {
+              "type": "string",
+              "description": "If provided, the `secret` will be used as the `key` to generate the HMAC hex digest value for [delivery signature headers](https://docs.github.com/webhooks/event-payloads/#delivery-headers)."
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "The URL to which the payloads will be delivered."
+            },
+            "insecure_ssl": {
+              "type": "string",
+              "description": "Determines whether the SSL certificate of the host for `url` will be verified when delivering payloads. Supported values include `0` (verification is performed) and `1` (verification is not performed). The default is `0`.",
+              "enum": ["0", "1"]
+            }
+          },
+          "additionalProperties": false
+        },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "meta deleted event"
+}

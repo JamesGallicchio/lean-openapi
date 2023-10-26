@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "organization$member_removed",
+  "type": "object",
+  "required": ["action", "membership", "organization", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["member_removed"] },
+    "membership": { "$ref": "common/membership.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "organization member_removed event"
+}

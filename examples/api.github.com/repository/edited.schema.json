@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "repository$edited",
+  "type": "object",
+  "required": ["action", "changes", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "changes": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "object",
+          "required": ["from"],
+          "properties": { "from": { "type": ["string", "null"] } },
+          "additionalProperties": false
+        },
+        "default_branch": {
+          "type": "object",
+          "required": ["from"],
+          "properties": { "from": { "type": "string" } },
+          "additionalProperties": false
+        },
+        "homepage": {
+          "type": "object",
+          "required": ["from"],
+          "properties": { "from": { "type": ["string", "null"] } },
+          "additionalProperties": false
+        },
+        "topics": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "repository edited event"
+}

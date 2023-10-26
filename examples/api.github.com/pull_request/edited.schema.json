@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "pull_request$edited",
+  "type": "object",
+  "required": [
+    "action",
+    "changes",
+    "number",
+    "pull_request",
+    "repository",
+    "sender"
+  ],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "number": { "type": "integer", "description": "The pull request number." },
+    "changes": {
+      "type": "object",
+      "description": "The changes to the comment if the action was `edited`.",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the body if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        },
+        "title": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the title if the action was `edited`."
+            }
+          },
+          "additionalProperties": false
+        },
+        "base": {
+          "type": "object",
+          "required": ["ref", "sha"],
+          "properties": {
+            "ref": {
+              "type": "object",
+              "required": ["from"],
+              "properties": { "from": { "type": "string" } },
+              "additionalProperties": false
+            },
+            "sha": {
+              "type": "object",
+              "required": ["from"],
+              "properties": { "from": { "type": "string" } },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "pull_request": { "$ref": "common/pull-request.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "pull_request edited event"
+}

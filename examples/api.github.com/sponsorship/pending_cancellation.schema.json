@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "sponsorship$pending_cancellation",
+  "type": "object",
+  "required": ["action", "sponsorship", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["pending_cancellation"] },
+    "sponsorship": {
+      "type": "object",
+      "required": [
+        "node_id",
+        "created_at",
+        "sponsorable",
+        "sponsor",
+        "privacy_level",
+        "tier"
+      ],
+      "properties": {
+        "node_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "sponsorable": { "$ref": "common/user.schema.json" },
+        "sponsor": { "$ref": "common/user.schema.json" },
+        "privacy_level": { "type": "string" },
+        "tier": { "$ref": "common/sponsorship-tier.schema.json" }
+      },
+      "additionalProperties": false
+    },
+    "effective_date": {
+      "type": "string",
+      "description": "The `pending_cancellation` and `pending_tier_change` event types will include the date the cancellation or tier change will take effect."
+    },
+    "sender": { "$ref": "common/user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "sponsorship pending_cancellation event"
+}

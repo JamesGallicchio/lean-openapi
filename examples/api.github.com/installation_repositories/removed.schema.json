@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "installation_repositories$removed",
+  "type": "object",
+  "required": [
+    "action",
+    "installation",
+    "repository_selection",
+    "repositories_added",
+    "repositories_removed",
+    "requester",
+    "sender"
+  ],
+  "properties": {
+    "action": { "type": "string", "enum": ["removed"] },
+    "installation": { "$ref": "common/installation.schema.json" },
+    "repository_selection": {
+      "type": "string",
+      "enum": ["all", "selected"],
+      "description": "Describe whether all repositories have been selected or there's a selection involved"
+    },
+    "repositories_added": {
+      "type": "array",
+      "description": "An array of repository objects, which were added to the installation.",
+      "items": {
+        "type": "object",
+        "required": ["id", "node_id", "name", "full_name", "private"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique identifier of the repository"
+          },
+          "node_id": { "type": "string" },
+          "name": {
+            "type": "string",
+            "description": "The name of the repository."
+          },
+          "full_name": { "type": "string" },
+          "private": {
+            "type": "boolean",
+            "description": "Whether the repository is private or public."
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 0
+    },
+    "repositories_removed": {
+      "type": "array",
+      "description": "An array of repository objects, which were removed from the installation.",
+      "items": {
+        "type": "object",
+        "required": ["id", "node_id", "name", "full_name", "private"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique identifier of the repository"
+          },
+          "node_id": { "type": "string" },
+          "name": {
+            "type": "string",
+            "description": "The name of the repository."
+          },
+          "full_name": { "type": "string" },
+          "private": {
+            "type": "boolean",
+            "description": "Whether the repository is private or public."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "requester": {
+      "oneOf": [{ "$ref": "common/user.schema.json" }, { "type": "null" }]
+    },
+    "sender": { "$ref": "common/user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "installation_repositories removed event"
+}

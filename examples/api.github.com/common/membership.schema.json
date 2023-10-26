@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "common/membership.schema.json",
+  "required": ["url", "state", "role", "organization_url", "user"],
+  "type": "object",
+  "description": "The membership between the user and the organization. Not present when the action is `member_invited`.",
+  "properties": {
+    "url": { "type": "string", "format": "uri" },
+    "state": {
+      "type": "string",
+      "description": "The state of the user's membership in the team."
+    },
+    "role": {
+      "type": "string",
+      "description": "The role of the user in the team."
+    },
+    "organization_url": { "type": "string", "format": "uri" },
+    "user": { "$ref": "user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "Membership"
+}

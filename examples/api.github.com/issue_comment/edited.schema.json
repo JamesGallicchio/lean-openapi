@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "issue_comment$edited",
+  "type": "object",
+  "required": ["action", "changes", "issue", "comment", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["edited"] },
+    "changes": {
+      "type": "object",
+      "description": "The changes to the comment.",
+      "properties": {
+        "body": {
+          "type": "object",
+          "required": ["from"],
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "The previous version of the body."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "issue": {
+      "description": "The [issue](https://docs.github.com/en/rest/reference/issues) the comment belongs to.",
+      "allOf": [
+        { "$ref": "common/issue.schema.json" },
+        {
+          "type": "object",
+          "required": ["labels", "state", "locked", "assignee"],
+          "properties": {
+            "assignee": {
+              "oneOf": [
+                { "$ref": "common/user.schema.json" },
+                { "type": "null" }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": ["open", "closed"],
+              "description": "State of the issue; either 'open' or 'closed'"
+            },
+            "locked": { "type": "boolean" },
+            "labels": {
+              "type": "array",
+              "items": { "$ref": "common/label.schema.json" }
+            }
+          },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "comment": { "$ref": "common/issue-comment.schema.json" },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "issue_comment edited event"
+}

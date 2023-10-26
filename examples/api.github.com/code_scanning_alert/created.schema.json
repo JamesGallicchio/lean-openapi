@@ -1,0 +1,133 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "code_scanning_alert$created",
+  "type": "object",
+  "required": ["action", "alert", "ref", "commit_oid", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["created"] },
+    "alert": {
+      "type": "object",
+      "description": "The code scanning alert involved in the event.",
+      "required": [
+        "number",
+        "created_at",
+        "url",
+        "html_url",
+        "instances",
+        "state",
+        "dismissed_by",
+        "dismissed_at",
+        "dismissed_reason",
+        "rule",
+        "tool"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "description": "The code scanning alert number."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The time that the alert was created in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ.`"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The REST API URL of the alert resource."
+        },
+        "html_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The GitHub URL of the alert resource."
+        },
+        "instances": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "common/alert-instance.schema.json" },
+              {
+                "type": "object",
+                "required": ["state"],
+                "properties": {
+                  "state": { "type": "string", "enum": ["open", "dismissed"] }
+                },
+                "tsAdditionalProperties": false
+              }
+            ]
+          }
+        },
+        "most_recent_instance": { "$ref": "common/alert-instance.schema.json" },
+        "state": {
+          "type": "string",
+          "description": "State of a code scanning alert.",
+          "enum": ["open", "dismissed"]
+        },
+        "dismissed_by": { "type": "null" },
+        "dismissed_at": {
+          "type": "null",
+          "description": "The time that the alert was dismissed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`."
+        },
+        "dismissed_reason": {
+          "type": "null",
+          "description": "The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, and `used in tests`."
+        },
+        "rule": {
+          "type": "object",
+          "required": ["id", "severity", "description"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "A unique identifier for the rule used to detect the alert."
+            },
+            "severity": {
+              "type": ["string", "null"],
+              "enum": ["none", "note", "warning", "error", null],
+              "description": "The severity of the alert."
+            },
+            "description": {
+              "type": "string",
+              "description": "A short description of the rule used to detect the alert."
+            },
+            "name": { "type": "string" },
+            "full_description": { "type": "string" },
+            "tags": { "type": "null" },
+            "help": { "type": "null" }
+          },
+          "additionalProperties": false
+        },
+        "tool": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The name of the tool used to generate the code scanning analysis alert."
+            },
+            "version": {
+              "type": ["string", "null"],
+              "description": "The version of the tool used to detect the alert."
+            },
+            "guid": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ref": {
+      "type": "string",
+      "description": "The Git reference of the code scanning alert. When the action is `reopened_by_user` or `closed_by_user`, the event was triggered by the `sender` and this value will be empty."
+    },
+    "commit_oid": {
+      "type": "string",
+      "description": "The commit SHA of the code scanning alert. When the action is `reopened_by_user` or `closed_by_user`, the event was triggered by the `sender` and this value will be empty."
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/github-org.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "code_scanning_alert created event"
+}

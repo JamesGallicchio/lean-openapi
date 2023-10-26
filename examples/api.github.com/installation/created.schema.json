@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "installation$created",
+  "type": "object",
+  "required": ["action", "installation", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["created"] },
+    "installation": { "$ref": "common/installation.schema.json" },
+    "repositories": {
+      "type": "array",
+      "description": "An array of repository objects that the installation can access.",
+      "items": {
+        "type": "object",
+        "required": ["id", "node_id", "name", "full_name", "private"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique identifier of the repository"
+          },
+          "node_id": { "type": "string" },
+          "name": {
+            "type": "string",
+            "description": "The name of the repository."
+          },
+          "full_name": { "type": "string" },
+          "private": {
+            "type": "boolean",
+            "description": "Whether the repository is private or public."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "requester": { "$ref": "common/user.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "installation created event"
+}

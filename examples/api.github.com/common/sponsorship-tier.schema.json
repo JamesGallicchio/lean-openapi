@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "common/sponsorship-tier.schema.json",
+  "description": "The `tier_changed` and `pending_tier_change` will include the original tier before the change or pending change. For more information, see the pending tier change payload.",
+  "required": [
+    "node_id",
+    "created_at",
+    "description",
+    "monthly_price_in_cents",
+    "monthly_price_in_dollars",
+    "name",
+    "is_one_time",
+    "is_custom_ammount"
+  ],
+  "type": "object",
+  "properties": {
+    "node_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "description": { "type": "string" },
+    "monthly_price_in_cents": { "type": "integer" },
+    "monthly_price_in_dollars": { "type": "integer" },
+    "name": { "type": "string" },
+    "is_one_time": { "type": "boolean" },
+    "is_custom_ammount": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "title": "Sponsorship Tier"
+}

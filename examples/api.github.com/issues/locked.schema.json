@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "issues$locked",
+  "type": "object",
+  "required": ["action", "issue", "repository", "sender"],
+  "properties": {
+    "action": { "type": "string", "enum": ["locked"] },
+    "issue": {
+      "allOf": [
+        { "$ref": "common/issue.schema.json" },
+        {
+          "type": "object",
+          "required": ["locked", "active_lock_reason"],
+          "properties": {
+            "locked": { "type": "boolean", "enum": [true] },
+            "active_lock_reason": {
+              "type": ["string", "null"],
+              "enum": ["resolved", "off-topic", "too heated", "spam", null]
+            }
+          },
+          "tsAdditionalProperties": false
+        }
+      ]
+    },
+    "repository": { "$ref": "common/repository.schema.json" },
+    "sender": { "$ref": "common/user.schema.json" },
+    "installation": { "$ref": "common/installation-lite.schema.json" },
+    "organization": { "$ref": "common/organization.schema.json" }
+  },
+  "additionalProperties": false,
+  "title": "issues locked event"
+}
