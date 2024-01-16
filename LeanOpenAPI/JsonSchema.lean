@@ -15,6 +15,7 @@
 -/
 
 import Lean.Data.Json
+import Lean.Elab.Deriving.FromToJson
 import LeanOpenAPI.Std
 
 /-! This file implements a version of parsing JsonSchema. -/
@@ -163,7 +164,7 @@ private def SchemaM.objFieldOpt (m : Lean.RBNode String fun _ => Lean.Json) (f :
     let res ← SchemaM.withState ((← SchemaM.curRef).thenKey f) next s
     return some res
 
-open Lean Elab Deriving Command Lean.Parser.Term Meta in
+open Lean Elab Command Lean.Parser.Term Meta in
 section
 
 private def withBindersType (b : Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) (e : Term) : TermElabM Term :=
@@ -176,9 +177,9 @@ scoped elab "genStructSchema " defnId:ident "for " struct:ident : command =>
   liftTermElabM do
   let defnId := defnId.getId
   let declName ← resolveGlobalConstNoOverload struct
-  let ctx ← mkContext "jsonSchema" declName
+  let ctx ← Deriving.mkContext "jsonSchema" declName
   Term.withDeclName defnId <| do
-  let header ← mkHeader ``SchemaM 0 ctx.typeInfos[0]!
+  let header ← Deriving.mkHeader ``SchemaM 0 ctx.typeInfos[0]!
   let fields := getStructureFieldsFlattened (← getEnv) declName (includeSubobjectFields := false)
   let fieldIdents := fields.map mkIdent
   let mIdent : Ident ← `(m)
@@ -202,7 +203,7 @@ This deriver only works if all fields have a type of the form `SchemaM.toType <s
   )
   let type := ← instantiateMVars <| ← Term.elabTerm (expectedType? := none) <|
     ← withBindersType header.binders <| ← `(
-      SchemaM $(← mkInductiveApp ctx.typeInfos[0]! header.argNames)
+      SchemaM $(← Deriving.mkInductiveApp ctx.typeInfos[0]! header.argNames)
     )
   let value := ← instantiateMVars <| ← Term.elabTerm (expectedType? := some type) <|
     ← withBindersFun header.binders <| ← `(do
